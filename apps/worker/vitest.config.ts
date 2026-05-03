@@ -7,6 +7,10 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "../../wrangler.jsonc" },
+      // Run tests fully offline. Without this the AI binding (which only has a
+      // remote implementation) forces wrangler into remote mode and CI fails
+      // with "You must be logged in to use wrangler dev in remote mode."
+      remoteBindings: false,
     }),
   ],
   test: {
