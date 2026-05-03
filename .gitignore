@@ -1,0 +1,38 @@
+# Node
+node_modules/
+.pnpm-store/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+.dev.vars.*
+wrangler.toml.bak
+
+# Build outputs
+dist/
+build/
+.astro/
+.vercel/
+.netlify/
+.turbo/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
