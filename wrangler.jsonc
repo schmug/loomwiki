@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Loomwiki worker config. SPEC §5 — declare every binding up front, even when a
+// milestone does not consume it yet. Placeholder IDs ("<TBD>") are filled in
+// during M1 deploy via:
+//   wrangler d1 create loomwiki
+//   wrangler kv namespace create CACHE
+//
+// Append-only rules (CLAUDE.md):
+//   - Never edit historical entries in `migrations`.
+//   - D1 migrations live in packages/schema/d1-migrations/ and are forward-only.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "loomwiki-api",
+  "main": "apps/worker/src/index.ts",
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "routes": [
+    // Domain is loomwiki.com per resolved decisions; actual registration is
+    // operator-side. Comment out if deploying to a fork without the domain.
+    { "pattern": "api.loomwiki.com", "custom_domain": true }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_ROOM", "class_name": "ChatRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatRoom"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "loomwiki",
+      "database_id": "<TBD>",
+      "migrations_dir": "packages/schema/d1-migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "loomwiki-attachments" }],
+  "kv_namespaces": [{ "binding": "CACHE", "id": "<TBD>" }],
+  "ai": { "binding": "AI" },
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  "vars": {
+    "WORKSPACE_NAME": "default",
+    "DEFAULT_LLM_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
+    "ARTIFACTS_REPO": "loomwiki-vault",
+    "AI_SEARCH_INSTANCE": "loomwiki-search"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1.0
+  },
+  "triggers": {
+    // 02:00 UTC daily — chat-log → Artifacts commit (lands in M5)
+    "crons": ["0 2 * * *"]
+  }
+}
