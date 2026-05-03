@@ -1,0 +1,31 @@
+{
+  "name": "loomwiki",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Cloudflare-native team workspace where chat is the input and a git-backed wiki is the output.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "concurrently -n worker,web -c blue,magenta \"pnpm --filter @loomwiki/worker dev\" \"pnpm --filter @loomwiki/web dev\"",
+    "build": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" run build",
+    "test": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" run test",
+    "typecheck": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" run typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "deploy": "pnpm --filter @loomwiki/worker deploy",
+    "migrate:new": "echo 'migrate:new lands in M1 along with packages/schema/d1-migrations' && exit 1",
+    "seed": "echo 'seed lands in M1 with the D1 schema' && exit 1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild", "sharp", "workerd"]
+  }
+}
