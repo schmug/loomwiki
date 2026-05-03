@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "worker (wrangler dev)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@loomwiki/worker", "dev"],
+      "port": 8788
+    },
+    {
+      "name": "web (astro dev)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@loomwiki/web", "dev"],
+      "port": 4321
+    }
+  ]
+}
