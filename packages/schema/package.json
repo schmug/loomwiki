@@ -1,5 +1,5 @@
 {
-  "name": "@loomwiki/shared",
+  "name": "@loomwiki/schema",
   "version": "0.0.1",
   "private": true,
   "license": "Apache-2.0",
@@ -8,10 +8,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./id": "./src/id.ts",
-    "./error": "./src/error.ts",
-    "./errors": "./src/errors.ts",
-    "./result": "./src/result.ts"
+    "./parsers": "./src/parsers.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit false --emitDeclarationOnly",
@@ -19,7 +16,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "uuidv7": "^1.0.2"
+    "@loomwiki/shared": "workspace:*",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
