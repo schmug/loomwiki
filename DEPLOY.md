@@ -261,6 +261,65 @@ If a vault repo gets into a bad state:
 For a clean start: delete the repo via `env.ARTIFACTS.delete(name)` (or
 the dashboard) and call the bootstrap admin route again.
 
+## Daily chat-log archival cron (M5)
+
+Loomwiki runs a Workers cron at **02:00 UTC daily** that aggregates the
+previous calendar day's chat messages from D1 and writes one markdown
+file per room to the vault under `/rooms/{slug}/log/{YYYY-MM-DD}.md`.
+The schedule is declared in `wrangler.jsonc`:
+
+```jsonc
+"triggers": { "crons": ["0 2 * * *"] }
+```
+
+The handler lives in [`apps/worker/src/scheduled.ts`](apps/worker/src/scheduled.ts)
+and calls `archiveDay()` from [`apps/worker/src/lib/chat-log.ts`](apps/worker/src/lib/chat-log.ts).
+Re-running for the same date is a no-op at the content level — the
+formatter is deterministic and the backend writes are last-write-wins,
+so byte-identical output overwrites the previous file cleanly.
+
+### Verifying the cron is firing in production
+
+Cloudflare dashboard → **Workers & Pages → loomwiki-api → Triggers**
+shows the cron schedule and the last few invocation results. The
+handler emits a structured log line on each successful run; tail it
+with:
+
+```sh
+wrangler tail --format pretty | grep archive_run_complete
+```
+
+### Manual backfill (operator)
+
+To archive an arbitrary past day (e.g. for a fresh deploy that has
+existing chat history, or after a vault reset):
+
+```sh
+DATE=2026-05-03
+curl -s -X POST -H "X-Local-Dev-Email: cory@example.com" \
+  "http://127.0.0.1:8788/api/_admin/cron/archive-day?date=$DATE" | jq .
+# Expected: { ok: true, data: { date: "...", files_written: N, rooms_processed: M, errors: [] } }
+```
+
+In production, swap the `X-Local-Dev-Email` header for the Access JWT
+the operator's logged-in browser session uses (the route is
+workspace-owner-only). The endpoint is idempotent — re-running for
+the same date overwrites the file cleanly and is safe to invoke
+repeatedly.
+
+### Local-dev path
+
+`wrangler dev --test-scheduled` exposes a `/__scheduled` endpoint that
+fires the handler synchronously without waiting for the cron to tick:
+
+```sh
+pnpm --filter @loomwiki/worker dev --test-scheduled --port 8788
+# in another shell:
+curl -s "http://127.0.0.1:8788/__scheduled?cron=0+2+*+*+*"
+```
+
+Watch `wrangler tail` for the `archive_run_complete` log line.
+
 ## Right-to-deletion (operator note)
 
 Chat messages can be soft-deleted from D1 and the live DO. They cannot be
