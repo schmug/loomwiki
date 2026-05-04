@@ -31,9 +31,23 @@ describe("MergeDialog", () => {
     render(<MergeDialog details={DETAILS} onResolve={async () => {}} onClose={() => {}} />);
     expect(screen.getByText(/Resolve conflict/i)).toBeInTheDocument();
     expect(document.body.textContent).toContain("INCOMING");
-    expect(document.body.textContent).toContain("LOCAL");
+    // Local pane is initialized as YAML-fenced; the LOCAL body text
+    // appears alongside the YAML frontmatter.
+    const local = screen.getByTestId("merge-local") as HTMLTextAreaElement;
+    expect(local.value).toContain("LOCAL");
+    expect(local.value).toMatch(/^---\n/); // YAML fence at the start
+    expect(local.value).toContain("title:");
     // Base text is in a <details><pre>; pre's textContent includes it.
     expect(document.querySelector("pre")?.textContent).toBe("BASE");
+  });
+
+  it('"Use this" copies the incoming pane into the local pane verbatim', () => {
+    const onResolve = vi.fn<(merged: string, sha: string) => Promise<void>>(async () => {});
+    render(<MergeDialog details={DETAILS} onResolve={onResolve} onClose={() => {}} />);
+    // The "Use this" button on the incoming pane.
+    fireEvent.click(screen.getByRole("button", { name: /use this/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save resolution/i }));
+    expect(onResolve).toHaveBeenCalledWith("INCOMING", "newer");
   });
 
   it("calls onResolve with the local pane and current_sha on save", async () => {

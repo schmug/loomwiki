@@ -85,11 +85,24 @@ export interface WikiPageReadResponse {
   page: WikiPagePayload;
 }
 
-export interface WikiPageWriteRequest {
+/** Structured write — sent by the editor's normal save flow. */
+export interface WikiPageStructuredWrite {
   frontmatter: WikiPageFrontmatter;
   body: string;
   before_sha?: string;
 }
+
+/**
+ * Raw write — sent by the merge dialog when the user pastes / accepts
+ * the on-disk YAML page text directly. The worker re-parses with
+ * gray-matter and applies the same validation.
+ */
+export interface WikiPageRawWrite {
+  raw: string;
+  before_sha?: string;
+}
+
+export type WikiPageWriteRequest = WikiPageStructuredWrite | WikiPageRawWrite;
 
 export interface WikiTreeResponse {
   paths: string[];

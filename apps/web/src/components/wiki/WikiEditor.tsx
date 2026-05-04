@@ -134,26 +134,14 @@ export function WikiEditor({ initialPage, onSaved, onCancel }: WikiEditorProps) 
   }
 
   async function handleResolve(mergedRaw: string, currentSha: string): Promise<void> {
-    // The merged raw is frontmatter + body. We crudely split on the
-    // second `---` fence; gray-matter on the worker validates so a
-    // malformed split surfaces as a 400 (not a silent corruption).
-    const match = mergedRaw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-    if (!match) {
-      toast.error("Could not parse merged content (missing --- fences)");
-      return;
-    }
-    const [, fmText, bodyText] = match;
-    let parsedFm: WikiPageFrontmatter;
-    try {
-      parsedFm = JSON.parse(fmText ?? "");
-    } catch {
-      toast.error("Frontmatter must be valid JSON in the merge dialog");
-      return;
-    }
+    // The merged raw is YAML-fenced frontmatter + body — the on-disk
+    // shape. Send it as a `raw` write; the worker's gray-matter parser
+    // validates the YAML and applies the same Zod schema as the
+    // structured path. Malformed YAML surfaces as a 400 with code
+    // VALIDATION_FAILED, never a silent corruption.
     try {
       const updated = await saveWikiPage(initialPage.path, {
-        frontmatter: { ...parsedFm, last_updated: nowIsoDate() },
-        body: bodyText ?? "",
+        raw: mergedRaw,
         before_sha: currentSha,
       });
       setSha(updated.sha);

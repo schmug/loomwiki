@@ -15,8 +15,46 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import type { WikiConflictDetails } from "@/lib/types";
+import type { WikiConflictDetails, WikiPageFrontmatter } from "@/lib/types";
 import { useEffect, useState } from "react";
+
+/**
+ * Render a frontmatter + body pair to the YAML-fenced on-disk shape
+ * that the worker stores. We hand-write the YAML rather than pulling
+ * in `js-yaml` — frontmatter is a fixed strict shape (Zod-validated
+ * by the worker on submit), and key:value lines suffice.
+ */
+function toYamlPage(fm: WikiPageFrontmatter, body: string): string {
+  const lines: string[] = ["---"];
+  lines.push(`title: ${yamlScalar(fm.title)}`);
+  lines.push(`kind: ${fm.kind}`);
+  lines.push(`created: ${fm.created}`);
+  lines.push(`last_updated: ${fm.last_updated}`);
+  lines.push(`status: ${fm.status}`);
+  if (fm.superseded_by !== undefined) {
+    lines.push(`superseded_by: ${yamlScalar(fm.superseded_by)}`);
+  }
+  if (fm.sources && fm.sources.length > 0) {
+    lines.push("sources:");
+    for (const s of fm.sources) {
+      lines.push(`  - room: ${yamlScalar(s.room)}`);
+      lines.push(`    message_id: ${yamlScalar(s.message_id)}`);
+      if (s.excerpt !== undefined) {
+        lines.push(`    excerpt: ${yamlScalar(s.excerpt)}`);
+      }
+    }
+  }
+  lines.push("---", "", body);
+  return lines.join("\n");
+}
+
+function yamlScalar(value: string): string {
+  // Quote any scalar that contains characters YAML would otherwise
+  // misinterpret (colons, leading dashes, hashes, brackets). Keep it
+  // simple: always quote and escape backslashes + double quotes.
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
 
 export interface MergeDialogProps {
   details: WikiConflictDetails | null;
@@ -35,11 +73,11 @@ export function MergeDialog({ details, onResolve, onClose }: MergeDialogProps) {
 
   useEffect(() => {
     if (details) {
-      // Initial local pane = the user's attempted content,
-      // reconstructed from frontmatter + body. The user edits this
-      // pane; we never auto-merge.
-      const fm = JSON.stringify(details.attempted_frontmatter, null, 2);
-      setDraft(`---\n${fm}\n---\n\n${details.attempted_body}`);
+      // Initial local pane = the user's attempted content rendered as
+      // YAML (the on-disk shape). YAML keeps "Use this" symmetric with
+      // the incoming pane's `current_raw`, and the worker re-parses
+      // with gray-matter so a YAML-fenced submit just works.
+      setDraft(toYamlPage(details.attempted_frontmatter, details.attempted_body));
     } else {
       setDraft("");
     }

@@ -264,6 +264,87 @@ describe("DELETE /api/wiki/*", () => {
   });
 });
 
+describe("PUT /api/wiki/* — raw shape (merge dialog resolve)", () => {
+  it("accepts a YAML-fenced raw payload and persists it", async () => {
+    const jwt = await fixture.mint({ email: "alice@example.com" });
+    // First create the page so we have a SHA to use as before_sha.
+    const created = await authedFetch(jwt, "/api/wiki/concepts/dmarc.md", {
+      method: "PUT",
+      body: JSON.stringify({ frontmatter: VALID_FRONTMATTER, body: "first" }),
+    });
+    const { data } = await asJson<Ok<{ page: PagePayload }>>(created);
+
+    const yaml = [
+      "---",
+      'title: "Resolved DMARC"',
+      "kind: concept",
+      "created: 2026-05-04",
+      "last_updated: 2026-05-04",
+      "status: published",
+      "---",
+      "",
+      "merged body",
+    ].join("\n");
+
+    const res = await authedFetch(jwt, "/api/wiki/concepts/dmarc.md", {
+      method: "PUT",
+      body: JSON.stringify({ raw: yaml, before_sha: data.page.sha }),
+    });
+    expect(res.status).toBe(200);
+    const updated = await asJson<Ok<{ page: PagePayload }>>(res);
+    expect(updated.data.page.frontmatter.title).toBe("Resolved DMARC");
+    expect(updated.data.page.frontmatter.status).toBe("published");
+    expect(updated.data.page.body.trim()).toBe("merged body");
+  });
+
+  it("rejects malformed YAML in raw with VALIDATION_FAILED", async () => {
+    const jwt = await fixture.mint({ email: "alice@example.com" });
+    const create = await authedFetch(jwt, "/api/wiki/concepts/x.md", {
+      method: "PUT",
+      body: JSON.stringify({ frontmatter: VALID_FRONTMATTER, body: "x" }),
+    });
+    const { data } = await asJson<Ok<{ page: PagePayload }>>(create);
+
+    const bad =
+      "---\ntitle: ok\nkind: not-a-real-kind\ncreated: 2026-05-04\nlast_updated: 2026-05-04\nstatus: draft\n---\nbody";
+    const res = await authedFetch(jwt, "/api/wiki/concepts/x.md", {
+      method: "PUT",
+      body: JSON.stringify({ raw: bad, before_sha: data.page.sha }),
+    });
+    expect(res.status).toBe(400);
+    const body = await asJson<Err>(res);
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+  });
+});
+
+describe("admin route gating", () => {
+  it("forbids non-owner from minting a vault token", async () => {
+    // First call by Alice provisions her as workspace owner.
+    const ownerJwt = await fixture.mint({ email: "alice@example.com" });
+    await authedFetch(ownerJwt, "/api/me");
+
+    const otherJwt = await fixture.mint({ email: "bob@example.com" });
+    const res = await authedFetch(otherJwt, "/api/_admin/wiki/vault-token", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    const body = await asJson<Err>(res);
+    expect(body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("forbids non-owner from running bootstrap", async () => {
+    const ownerJwt = await fixture.mint({ email: "alice@example.com" });
+    await authedFetch(ownerJwt, "/api/me");
+
+    const otherJwt = await fixture.mint({ email: "bob@example.com" });
+    const res = await authedFetch(otherJwt, "/api/_admin/wiki/bootstrap-vault", {
+      method: "POST",
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("auth gating", () => {
   it("rejects unauthenticated wiki-tree", async () => {
     const res = await SELF.fetch("https://api.local/api/wiki-tree");

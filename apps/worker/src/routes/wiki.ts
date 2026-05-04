@@ -81,10 +81,11 @@ async function writePage(
   path: string,
   request: WikiPageWriteRequest,
 ): Promise<WikiPagePayload> {
-  const validated = validatePagePayload({
-    frontmatter: request.frontmatter,
-    body: request.body,
-  });
+  // The request is either {frontmatter, body, before_sha?} (editor path)
+  // or {raw, before_sha?} (merge-dialog "Use this" path where the
+  // user is editing the on-disk YAML directly). Normalize to a validated
+  // {frontmatter, body} so the downstream write path is identical.
+  const validated = await normalizeWriteRequest(request);
 
   const existing = await backend.read(path);
 
@@ -114,6 +115,16 @@ async function writePage(
     body: validated.body,
     sha: serialized.sha,
   };
+}
+
+async function normalizeWriteRequest(
+  request: WikiPageWriteRequest,
+): Promise<ReturnType<typeof validatePagePayload>> {
+  if ("raw" in request) {
+    const parsed = await deserializePage(request.raw);
+    return validatePagePayload({ frontmatter: parsed.frontmatter, body: parsed.body });
+  }
+  return validatePagePayload({ frontmatter: request.frontmatter, body: request.body });
 }
 
 function conflictError(

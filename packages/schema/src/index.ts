@@ -197,14 +197,30 @@ export type WikiPageFrontmatter = z.infer<typeof WikiPageFrontmatterSchema>;
 // 64 KB cap on the body. Mirrors vault-template/AGENTS.md §5.
 export const WIKI_BODY_MAX_BYTES = 64 * 1024;
 
-// Request bodies for the wiki write route.
-export const WikiPageWriteRequestSchema = z
+// Request bodies for the wiki write route. Accepts either a structured
+// {frontmatter, body} shape (the default editor path) or a raw shape
+// {raw} carrying a YAML-fenced page (the merge-dialog "Use this" path,
+// where the user is editing the on-disk text directly). Exactly one of
+// the two shapes is required.
+const WikiPageStructuredWriteSchema = z
   .object({
     frontmatter: WikiPageFrontmatterSchema,
-    body: z.string(), // length validated separately so the error code can be VALIDATION_FAILED
+    body: z.string(), // length validated separately so the code is VALIDATION_FAILED
     before_sha: z.string().min(1).max(128).optional(),
   })
   .strict();
+
+const WikiPageRawWriteSchema = z
+  .object({
+    raw: z.string().min(1),
+    before_sha: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const WikiPageWriteRequestSchema = z.union([
+  WikiPageStructuredWriteSchema,
+  WikiPageRawWriteSchema,
+]);
 export type WikiPageWriteRequest = z.infer<typeof WikiPageWriteRequestSchema>;
 
 // ---------- Proposals (M7 placeholder; M4 only stores the type) ----------
