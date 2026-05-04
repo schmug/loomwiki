@@ -84,24 +84,25 @@ export function NewPageDialog({ existingPaths, trigger }: NewPageDialogProps) {
     }
     // Navigate to /w/<slug-path>?new=1&… — the [...path] route 404s
     // and renders the create-this-page CTA, opening the editor with
-    // the seeded frontmatter. Build the URL through structured URL +
-    // URLSearchParams so user input flows through dedicated escapers
-    // (CodeQL js/xss-through-dom would otherwise see an inline string
-    // concat). The slug component is also independently validated by
-    // SLUG_REGEX above; we re-assert here as a defense-in-depth check.
+    // the seeded frontmatter.
+    //
+    // Every user-controlled fragment of the URL is escaped via
+    // encodeURIComponent (a CodeQL-recognized sanitizer for
+    // js/xss-through-dom). The slug segments are *also* asserted to
+    // match SAFE_PATH_SEGMENT first — defense-in-depth so a future
+    // change to the kind→folder map can't smuggle uppercase / dots /
+    // encoded chars into the URL builder.
     const slugPath = path.replace(/^\/wiki/, "").replace(/\.md$/, "");
     const slugSegments = slugPath.split("/").filter((s) => s.length > 0);
     if (!slugSegments.every((s) => SAFE_PATH_SEGMENT.test(s))) {
       toast.error("Slug path contains unsafe characters");
       return;
     }
-    const target = new URL(window.location.href);
-    target.pathname = `/w/${slugSegments.join("/")}`;
-    target.search = "";
-    target.searchParams.set("new", "1");
-    target.searchParams.set("title", title);
-    target.searchParams.set("kind", kind);
-    window.location.assign(target.pathname + target.search);
+    const safePath = slugSegments.map(encodeURIComponent).join("/");
+    const safeTitle = encodeURIComponent(title);
+    const safeKind = encodeURIComponent(kind);
+    const url = `/w/${safePath}?new=1&title=${safeTitle}&kind=${safeKind}`;
+    window.location.assign(url);
   }
 
   return (
