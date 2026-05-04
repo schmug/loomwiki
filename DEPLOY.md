@@ -12,15 +12,20 @@
 
 ## One-time setup
 
-### 1. Create the D1 database and KV namespace
+### 1. Create the D1 database and KV namespaces
 
 ```sh
 wrangler d1 create loomwiki
 wrangler kv namespace create CACHE
+wrangler kv namespace create WIKI_KV   # M4 wiki content storage
 ```
 
 Copy the `database_id` and `id` values into `wrangler.jsonc` (replace the
 `<TBD>` placeholders).
+
+The `WIKI_KV` namespace is the v0.0.1 wiki content store; M4.5 will swap
+it for git-backed persistence against the Artifacts vault repo. See
+`docs/ADR/0003-artifacts-as-vault.md`.
 
 ### 2. Set up Cloudflare Access
 
@@ -172,6 +177,89 @@ pnpm migrate:remote
 Migrations are idempotent: re-running `migrate:remote` after a successful
 apply is a no-op. To roll back, write a forward migration that undoes the
 change — never edit a committed migration file (CLAUDE.md "Do not touch").
+
+## Wiki vault (M4)
+
+Loomwiki uses Cloudflare Artifacts for the workspace's vault repo
+(SPEC §7.2; ADR-0003). The Workers binding is declared in
+`wrangler.jsonc` as:
+
+```jsonc
+"artifacts": [{ "binding": "ARTIFACTS", "namespace": "default" }]
+```
+
+The vault repo is **created lazily on first request** that needs it
+(`env.ARTIFACTS.create(env.ARTIFACTS_REPO)`). No one-time setup is
+needed beyond having the binding wired and your account on the
+Artifacts allowlist.
+
+### Verifying Artifacts is provisioned
+
+The simplest check is to call the bootstrap admin route once
+post-deploy:
+
+```sh
+curl -X POST -H "X-Local-Dev-Email: cory@example.com" \
+  http://127.0.0.1:8788/api/_admin/wiki/bootstrap-vault | jq .
+```
+
+The first response contains `bootstrap.repoName` and
+`bootstrap.remote` — the public HTTPS git endpoint of your vault.
+Subsequent calls are no-ops (idempotent).
+
+### Cloning the vault from outside
+
+To `git clone` your vault repo for backup or external editing, mint a
+short-lived token via the admin route:
+
+```sh
+TOKEN_PAYLOAD=$(curl -s -X POST -H "X-Local-Dev-Email: cory@example.com" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"read","ttl_seconds":3600}' \
+  http://127.0.0.1:8788/api/_admin/wiki/vault-token)
+
+ARTIFACTS_TOKEN=$(echo "$TOKEN_PAYLOAD" | jq -r '.data.token')
+ARTIFACTS_REMOTE=$(echo "$TOKEN_PAYLOAD" | jq -r '.data.remote')
+
+git -c http.extraHeader="Authorization: Bearer $ARTIFACTS_TOKEN" \
+  clone "$ARTIFACTS_REMOTE" /tmp/loomwiki-vault
+```
+
+The token is workspace-owner-only and never logged. It expires after
+the requested TTL (default 1 hour, max 1 year).
+
+> **v0.0.1 caveat**: in M4 the wiki **content** is persisted in
+> `WIKI_KV` rather than pushed to the git remote. A fresh `git clone`
+> returns an empty (or seed-only) repo today. M4.5 starts pushing wiki
+> content via `repo.createToken("write")` and isomorphic-git so
+> `git clone` returns the same content the UI shows.
+
+### Local-dev limitation
+
+Miniflare does not currently host the Artifacts binding — calling the
+`bootstrap-vault` or `vault-token` routes against `wrangler dev
+--local` will fail because the binding is "remote-only." Two options:
+
+1. **Run the route tests** in vitest — they use a typed in-memory fake
+   binding (`apps/worker/src/__tests__/__fixtures__/fake-artifacts.ts`)
+   and a `KvWikiBackend` against miniflare's KV. Full backend
+   coverage, no network.
+2. **Use `wrangler dev --remote`** to talk to real Artifacts on
+   Cloudflare's network. Acceptable for live smoke tests; expect
+   real billing.
+
+### Recovering from a corrupted vault
+
+If a vault repo gets into a bad state:
+
+1. `git clone` it locally with a write-scoped token.
+2. Fix the content; `git push --force` to the same remote.
+3. The next UI read will reflect the new state (the M4.5 git backend
+   reads via the same remote; the M4 KV backend is independent and
+   needs a separate `WIKI_KV` reset via `wrangler kv key delete --prefix wiki:`).
+
+For a clean start: delete the repo via `env.ARTIFACTS.delete(name)` (or
+the dashboard) and call the bootstrap admin route again.
 
 ## Right-to-deletion (operator note)
 

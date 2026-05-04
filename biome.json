@@ -15,7 +15,9 @@
       "**/.wrangler",
       "**/coverage",
       "pnpm-lock.yaml",
-      "**/*.md"
+      "**/*.md",
+      "apps/worker/src/generated/**",
+      "apps/worker/worker-configuration.d.ts"
     ]
   },
   "formatter": {
