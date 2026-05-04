@@ -17,8 +17,10 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "deploy": "pnpm --filter @loomwiki/worker deploy",
-    "migrate:new": "echo 'migrate:new lands in M1 along with packages/schema/d1-migrations' && exit 1",
-    "seed": "echo 'seed lands in M1 with the D1 schema' && exit 1"
+    "migrate:local": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations apply loomwiki --local --config ../../wrangler.jsonc",
+    "migrate:remote": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations apply loomwiki --remote --config ../../wrangler.jsonc",
+    "migrate:new": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations create loomwiki --config ../../wrangler.jsonc",
+    "seed": "echo 'seed lands in M2/M3 with chat fixtures' && exit 1"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

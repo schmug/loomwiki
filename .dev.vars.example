@@ -1,0 +1,20 @@
+# Copy this file to `.dev.vars` (gitignored) for `wrangler dev`.
+#
+#   cp .dev.vars.example .dev.vars
+#
+# Wrangler reads `.dev.vars`, not `.env`. Real Access deployments override
+# these via the dashboard or a wrangler `env` block — these defaults exist
+# only so `pnpm dev` can boot without an Access tenant.
+
+# Set to your real Cloudflare Access team subdomain in production.
+ACCESS_TEAM=loomwiki-dev
+
+# Set to your real Cloudflare Access application AUD tag in production.
+ACCESS_AUD=loomwiki-dev-aud
+
+# When "true", the worker accepts an `X-Local-Dev-Email` header in place of
+# a Cloudflare Access JWT — *only* if the request also passes the IP gate
+# (127.0.0.1 / ::1) and the runtime is non-production. Triple-gated; see
+# apps/worker/src/middleware/auth.ts.
+ALLOW_LOCAL_DEV_AUTH=true
+LOCAL_DEV_EMAIL=cory@example.com
