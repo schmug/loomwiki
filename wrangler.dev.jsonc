@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Local-dev wrangler config. Mirrors wrangler.jsonc for everything that
+// `wrangler dev` exercises locally, but OMITS the Artifacts binding —
+// Artifacts is "remote-only" (no Miniflare emulator) and operator
+// accounts that lack the Cloudflare Artifacts allowlist cannot start a
+// remote-proxy session, which fails the dev boot for everyone else.
+//
+// What this means for local dev:
+//   - All M0–M3 paths work (auth, rooms, chat, messages).
+//   - M5 chat-log archival works (cron + admin route — uses WIKI_KV
+//     directly, doesn't touch Artifacts).
+//   - The M4 wiki R/W routes also work because page storage lives in
+//     WIKI_KV, NOT in Artifacts.
+//   - The two M4 admin routes that do touch Artifacts —
+//     POST /api/_admin/wiki/bootstrap-vault and
+//     POST /api/_admin/wiki/vault-token — will 500 with `env.ARTIFACTS
+//     undefined`. Use vitest (which provides a fake binding) for those
+//     paths, or run against a Cloudflare account that has Artifacts
+//     enabled via `wrangler dev --config ../../wrangler.jsonc --remote`.
+//
+// Production deploys MUST use wrangler.jsonc — never this file. The
+// `pnpm deploy` script enforces that by passing --config wrangler.jsonc
+// explicitly.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "loomwiki-api",
+  "main": "apps/worker/src/index.ts",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_ROOM", "class_name": "ChatRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatRoom"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "loomwiki",
+      "database_id": "<TBD>",
+      "migrations_dir": "packages/schema/d1-migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "loomwiki-attachments" }],
+  "kv_namespaces": [{ "binding": "CACHE", "id": "<TBD>" }, { "binding": "WIKI_KV", "id": "<TBD>" }],
+  "ai": { "binding": "AI" },
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  "vars": {
+    "WORKSPACE_NAME": "default",
+    "DEFAULT_LLM_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
+    "ARTIFACTS_REPO": "loomwiki-vault",
+    "AI_SEARCH_INSTANCE": "loomwiki-search",
+    "ACCESS_TEAM": "loomwiki-dev",
+    "ACCESS_AUD": "loomwiki-dev-aud",
+    "ALLOW_LOCAL_DEV_AUTH": "false",
+    "LOCAL_DEV_EMAIL": ""
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1.0
+  },
+  "triggers": {
+    "crons": ["0 2 * * *"]
+  }
+}
