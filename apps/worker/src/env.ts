@@ -9,10 +9,10 @@ import type {
   AnalyticsEngineDataset,
   D1Database,
   DurableObjectNamespace,
-  Fetcher,
   KVNamespace,
   R2Bucket,
 } from "@cloudflare/workers-types";
+import type { AiSearchBinding, WorkersAiBinding } from "./ai-search-binding.js";
 import type { ArtifactsBinding } from "./artifacts-binding.js";
 
 export interface VersionMetadata {
@@ -44,7 +44,13 @@ export interface Env {
   ARTIFACTS: ArtifactsBinding;
 
   // AI
-  AI: Fetcher;
+  AI: WorkersAiBinding;
+
+  // M6: AI Search hybrid (BM25 + vector) over the workspace vault.
+  // Optional at the type level because local dev configs (and operator
+  // accounts without AI Search) won't have it; the search orchestrator
+  // catches the binding-missing case and falls through to FTS5.
+  AI_SEARCH?: AiSearchBinding;
 
   // Version metadata (populated by CF in production deploys; may be undefined in dev)
   CF_VERSION_METADATA?: VersionMetadata;
@@ -69,6 +75,17 @@ export interface Env {
   // Local-dev auth bypass. Triple-gated; see middleware/auth.ts. Default off.
   ALLOW_LOCAL_DEV_AUTH: string;
   LOCAL_DEV_EMAIL: string;
+
+  // M6: AI Search + cost guards. Strings (not numbers/booleans) because
+  // wrangler vars are always strings; lib/llm.ts and lib/cost-guard.ts
+  // parse them at use time.
+  AI_SEARCH_ENABLED: string;
+  AI_GATEWAY_ID: string;
+  CF_ACCOUNT_ID: string;
+  LLM_DAILY_LIMIT_PER_USER_ASK: string;
+  LLM_DAILY_LIMIT_PER_USER_SEARCH: string;
+  LLM_DAILY_LIMIT_PER_WORKSPACE_ASK: string;
+  LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH: string;
 
   // Secrets — undefined locally unless set via .dev.vars
   SENTRY_DSN?: string;

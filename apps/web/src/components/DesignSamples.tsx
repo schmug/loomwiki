@@ -8,6 +8,9 @@
 //
 // Used by /design only. Not shipped in production routes.
 
+import { RateLimitBanner } from "@/components/RateLimitBanner";
+import { CitationPill } from "@/components/ask/CitationPill";
+import { SearchResults } from "@/components/search/SearchResults";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +98,93 @@ export function DesignSamples({ mode }: DesignSamplesProps) {
           <Button size="sm" variant="ghost">
             Save
           </Button>
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">Citations</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <CitationPill
+            citation={{
+              path: "/wiki/concepts/dmarc.md",
+              title: "DMARC",
+              kind: "concept",
+              heading_slug: "alignment",
+            }}
+          />
+          <CitationPill
+            citation={{
+              path: "/wiki/decisions/0001-mta-sts.md",
+              title: "Adopt MTA-STS for inbound",
+              kind: "decision",
+              heading_slug: null,
+            }}
+          />
+          <CitationPill
+            citation={{
+              path: "/wiki/glossary/spf.md",
+              title: "SPF",
+              kind: "glossary",
+              heading_slug: null,
+            }}
+          />
+          <CitationPill
+            citation={{
+              path: "/wiki/open-questions/dkim-key-rotation.md",
+              title: "How often should we rotate DKIM keys?",
+              kind: "open-question",
+              heading_slug: "context",
+            }}
+          />
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">Rate limit banners</p>
+        <RateLimitBanner
+          kind="ask"
+          details={{
+            limit: 50,
+            used: 50,
+            scope: "user",
+            reset_at: "2026-05-05T00:00:00Z",
+          }}
+        />
+        <RateLimitBanner
+          kind="search"
+          details={{
+            limit: 500,
+            used: 500,
+            scope: "workspace",
+            reset_at: "2026-05-05T00:00:00Z",
+          }}
+        />
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">Search empty states</p>
+        <div className="rounded-md border border-border">
+          <p className="border-b border-border bg-secondary/30 px-3 py-1 text-[11px] uppercase text-muted-foreground">
+            mode = hybrid
+          </p>
+          <SearchResults results={[]} mode="hybrid" onSelect={() => undefined} variant="full" />
+        </div>
+        <div className="rounded-md border border-border">
+          <p className="border-b border-border bg-secondary/30 px-3 py-1 text-[11px] uppercase text-muted-foreground">
+            mode = fts5_fallback
+          </p>
+          <SearchResults
+            results={[]}
+            mode="fts5_fallback"
+            onSelect={() => undefined}
+            variant="full"
+          />
         </div>
       </section>
     </div>

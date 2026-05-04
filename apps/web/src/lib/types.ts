@@ -121,3 +121,61 @@ export interface WikiConflictDetails {
   attempted_frontmatter: WikiPageFrontmatter;
   attempted_body: string;
 }
+
+// ---------- Search + Ask (M6) ----------
+
+/**
+ * Where the result row came from. `ai_search` is Cloudflare AI Search's
+ * hybrid (vector + BM25) result; `fts5` is the on-D1 fallback path used
+ * when AI Search is unavailable or its index hasn't been built yet.
+ */
+export type WikiSearchSource = "ai_search" | "fts5";
+
+/**
+ * `hybrid` = AI Search returned. `fts5_fallback` = AI Search was
+ * skipped/unavailable and only D1 FTS5 results are present. The UI
+ * uses this to show a "semantic search unavailable" banner so users
+ * understand why ranking might feel keyword-y today.
+ */
+export type WikiSearchMode = "hybrid" | "fts5_fallback";
+
+export interface WikiSearchResult {
+  /** Vault path, e.g. `/wiki/concepts/dmarc.md`. */
+  path: string;
+  title: string;
+  kind: WikiPageKind;
+  /**
+   * Pre-rendered snippet. For FTS5 results it contains `<mark>...</mark>`
+   * tags around matched terms — render via the helper that converts
+   * those into React `<mark>` elements (NOT innerHTML).
+   */
+  snippet: string;
+  score: number;
+  source: WikiSearchSource;
+}
+
+export interface WikiSearchResponse {
+  results: WikiSearchResult[];
+  mode: WikiSearchMode;
+}
+
+export interface AskCitation {
+  /** Vault path, e.g. `/wiki/concepts/dmarc.md`. */
+  path: string;
+  title: string;
+  kind: WikiPageKind;
+  /** Slugified heading anchor, or null when the chunk had no heading. */
+  heading_slug: string | null;
+}
+
+/**
+ * Shape of the `error.details` field on a 429 RATE_LIMITED. Surfaced in
+ * the RateLimitBanner. `scope` selects the wording (per-user vs the
+ * shared workspace bucket); `reset_at` is ISO-8601.
+ */
+export interface RateLimitDetails {
+  limit: number;
+  used: number;
+  scope: "user" | "workspace";
+  reset_at: string;
+}

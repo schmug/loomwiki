@@ -223,6 +223,103 @@ export const WikiPageWriteRequestSchema = z.union([
 ]);
 export type WikiPageWriteRequest = z.infer<typeof WikiPageWriteRequestSchema>;
 
+// ---------- LLM usage counters (M6) ----------
+
+export const LlmUsageScopeTypeSchema = z.enum(["user", "workspace"]);
+export type LlmUsageScopeType = z.infer<typeof LlmUsageScopeTypeSchema>;
+
+// `scope_id` is either a UUIDv7 (for scope_type='user') or the literal
+// sentinel '_workspace' (for scope_type='workspace'). The sentinel is
+// chosen to be impossible to confuse with a UUIDv7 — UUIDs never begin
+// with `_`. Schema validates the union shape; the cost-guard module
+// enforces the per-row pairing.
+export const LlmUsageScopeIdSchema = z.union([Uuidv7Schema, z.literal("_workspace")]);
+export type LlmUsageScopeId = z.infer<typeof LlmUsageScopeIdSchema>;
+
+const LlmUsageDaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a YYYY-MM-DD date");
+
+export const LlmUsageRowSchema = z.object({
+  workspace_id: Uuidv7Schema,
+  day: LlmUsageDaySchema,
+  scope_type: LlmUsageScopeTypeSchema,
+  scope_id: LlmUsageScopeIdSchema,
+  ask_count: z.number().int().nonnegative(),
+  search_count: z.number().int().nonnegative(),
+  updated_at: EpochSeconds,
+});
+export type LlmUsageRow = z.infer<typeof LlmUsageRowSchema>;
+
+export const LlmUsageKindSchema = z.enum(["ask", "search"]);
+export type LlmUsageKind = z.infer<typeof LlmUsageKindSchema>;
+
+// ---------- Wiki search / ask responses (M6) ----------
+
+export const WikiSearchSourceSchema = z.enum(["ai_search", "fts5"]);
+export type WikiSearchSource = z.infer<typeof WikiSearchSourceSchema>;
+
+export const WikiSearchModeSchema = z.enum(["hybrid", "fts5_fallback"]);
+export type WikiSearchMode = z.infer<typeof WikiSearchModeSchema>;
+
+export const WikiSearchResultSchema = z.object({
+  path: z.string().regex(WIKI_PATH_REGEX, "must be a wiki page path"),
+  title: z.string().min(1).max(200),
+  kind: WikiPageKindSchema,
+  snippet: z.string().max(2000),
+  // AI Search returns a normalized hybrid score; FTS5 returns the raw
+  // BM25 rank (lower-is-better). The orchestrator inverts FTS5's sign
+  // so callers can sort descending in either mode.
+  score: z.number(),
+  source: WikiSearchSourceSchema,
+  // The H1/H2 heading the matching chunk fell under, if any. AI Search
+  // populates this from the chunk metadata; FTS5 leaves it null because
+  // the index is row-per-page (no per-section granularity). The web
+  // citation pill builds /w/<path>#<slugifyHeading(heading)> when set.
+  heading: z.string().min(1).max(200).nullable().optional(),
+});
+export type WikiSearchResult = z.infer<typeof WikiSearchResultSchema>;
+
+export const WikiSearchResponseSchema = z.object({
+  results: z.array(WikiSearchResultSchema),
+  mode: WikiSearchModeSchema,
+});
+export type WikiSearchResponse = z.infer<typeof WikiSearchResponseSchema>;
+
+export const WikiSearchRequestSchema = z.object({
+  query: z.string().max(2000), // empty allowed — returns []
+  topK: z.number().int().min(1).max(50).optional(),
+});
+export type WikiSearchRequest = z.infer<typeof WikiSearchRequestSchema>;
+
+// `/api/ask` request. Streamed SSE response carries `delta` events plus
+// a final `citations` event whose payload is `WikiSearchResult[]`.
+export const AskRequestSchema = z.object({
+  question: z.string().min(1).max(4000),
+});
+export type AskRequest = z.infer<typeof AskRequestSchema>;
+
+export const AskCitationSchema = z.object({
+  path: z.string().regex(WIKI_PATH_REGEX),
+  title: z.string().min(1).max(200),
+  kind: WikiPageKindSchema,
+  // Optional in-page anchor (slugified heading) — null when the
+  // matching chunk had no heading (full-page chunk).
+  heading_slug: z.string().nullable(),
+});
+export type AskCitation = z.infer<typeof AskCitationSchema>;
+
+// Reindex (admin) response shape.
+export const SearchReindexErrorSchema = z.object({
+  path: z.string(),
+  message: z.string(),
+});
+export type SearchReindexError = z.infer<typeof SearchReindexErrorSchema>;
+
+export const SearchReindexResponseSchema = z.object({
+  pages_indexed: z.number().int().nonnegative(),
+  errors: z.array(SearchReindexErrorSchema),
+});
+export type SearchReindexResponse = z.infer<typeof SearchReindexResponseSchema>;
+
 // ---------- Proposals (M7 placeholder; M4 only stores the type) ----------
 
 export const ProposalActionSchema = z.enum(["create", "update"]);

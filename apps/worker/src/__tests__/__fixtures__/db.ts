@@ -16,6 +16,7 @@ export async function applyMigrations(): Promise<void> {
 
 // Truncate the application tables. Order respects FK references.
 const TRUNCATE_ORDER = [
+  "llm_usage_daily",
   "byok_keys",
   "proposals",
   "ingest_runs",
@@ -26,8 +27,16 @@ const TRUNCATE_ORDER = [
   "users",
 ];
 
+// FTS5 virtual tables are independent of FK ordering — flush them
+// alongside the regular tables so search-index state doesn't bleed
+// between tests in the same file.
+const FTS5_TABLES = ["wiki_pages_fts"];
+
 export async function resetDb(): Promise<void> {
   for (const table of TRUNCATE_ORDER) {
+    await env.DB.prepare(`DELETE FROM ${table}`).run();
+  }
+  for (const table of FTS5_TABLES) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }
 }

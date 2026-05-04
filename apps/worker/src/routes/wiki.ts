@@ -23,7 +23,10 @@ import {
 } from "@loomwiki/schema";
 import { ErrorCodes, LoomwikiError, apiOk } from "@loomwiki/shared";
 import { Hono } from "hono";
+import type { Env } from "../env.js";
+import { removePageFromAiSearch, upsertPageInAiSearch } from "../lib/ai-search.js";
 import { mintVaultToken } from "../lib/artifacts.js";
+import { removePageFts5, upsertPageFts5 } from "../lib/fts5.js";
 import { bootstrapVault, defaultWikiBackend } from "../lib/vault-bootstrap.js";
 import { deserializePage, serializePage, validatePagePayload } from "../lib/wiki-content.js";
 import type { AuthEnv } from "../middleware/auth.js";
@@ -127,6 +130,54 @@ async function normalizeWriteRequest(
   return validatePagePayload({ frontmatter: request.frontmatter, body: request.body });
 }
 
+// Index sync. The wiki backend (KV / Artifacts in M4.5) is the source
+// of truth for page content; the search indexes are derived views that
+// can lag without breaking correctness. We use Promise.allSettled so
+// one index failing (e.g. AI Search disabled in dev) never blocks the
+// other from succeeding, and neither failing reverts a successful
+// backend write/delete. Failures are logged and shrugged off — the
+// admin reindex route (M6) is the catch-up mechanism.
+async function syncIndexesOnUpsert(env: Env, payload: WikiPagePayload): Promise<void> {
+  const frontmatter = payload.frontmatter as { title: string; kind: string };
+  const settled = await Promise.allSettled([
+    upsertPageInAiSearch(env, {
+      path: payload.path,
+      frontmatter: {
+        title: frontmatter.title,
+        kind: frontmatter.kind as never,
+      },
+      body: payload.body,
+    }),
+    upsertPageFts5(env, {
+      path: payload.path,
+      title: frontmatter.title,
+      body: payload.body,
+    }),
+  ]);
+  for (const r of settled) {
+    if (r.status === "rejected") {
+      console.warn(`[wiki] index upsert failed for ${payload.path}: ${describeReason(r.reason)}`);
+    }
+  }
+}
+
+async function syncIndexesOnDelete(env: Env, path: string): Promise<void> {
+  const settled = await Promise.allSettled([
+    removePageFromAiSearch(env, path),
+    removePageFts5(env, path),
+  ]);
+  for (const r of settled) {
+    if (r.status === "rejected") {
+      console.warn(`[wiki] index delete failed for ${path}: ${describeReason(r.reason)}`);
+    }
+  }
+}
+
+function describeReason(reason: unknown): string {
+  if (reason instanceof Error) return reason.message;
+  return String(reason);
+}
+
 function conflictError(
   path: string,
   existing: { raw: string; sha: string },
@@ -182,6 +233,7 @@ export const wikiRoute = new Hono<AuthEnv>()
     }
     const backend = defaultWikiBackend(c.env);
     const payload = await writePage(backend, path, parsed.data);
+    await syncIndexesOnUpsert(c.env, payload);
     return c.json(apiOk({ page: payload }));
   })
   .delete("/wiki/*", async (c) => {
@@ -191,6 +243,7 @@ export const wikiRoute = new Hono<AuthEnv>()
     // relax to admin members of the workspace.
     requireOwner(c);
     await backend.delete(path);
+    await syncIndexesOnDelete(c.env, path);
     return c.json(apiOk({ path }));
   })
   .post("/_admin/wiki/bootstrap-vault", async (c) => {

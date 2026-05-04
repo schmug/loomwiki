@@ -320,6 +320,167 @@ curl -s "http://127.0.0.1:8788/__scheduled?cron=0+2+*+*+*"
 
 Watch `wrangler tail` for the `archive_run_complete` log line.
 
+## AI Search + /ask + cost guards (M6)
+
+M6 wires hybrid search over `/wiki/**` and the `/ask` RAG endpoint. Two
+pieces of operator setup beyond the standard deploy: provisioning the
+AI Search instance and configuring the AI Gateway daily cap.
+
+### 1. Provision the AI Search instance
+
+```sh
+# One-time per workspace deploy. The instance name is what
+# wrangler.jsonc references in the ai_search binding block.
+wrangler ai-search create loomwiki-search \
+  --data-source artifacts \
+  --filter "path: /wiki/**"
+```
+
+The dashboard equivalent: **AI → AI Search → Create instance →
+Source: Artifacts → Repo: <your loomwiki vault> → Filter: path glob
+`/wiki/**`**.
+
+After creation, the binding in `wrangler.jsonc` (`ai_search.binding =
+"AI_SEARCH"`, `instance_name = "loomwiki-search"`) wires it to the
+worker. Auto-detect: if the binding is missing or the instance name is
+wrong, search auto-falls-back to the D1 FTS5 index — the worker logs a
+warning and the web UI shows "Showing keyword matches only — semantic
+search is unavailable." See `docs/ADR/0004-search-rag-layering.md` for
+the rationale.
+
+### 2. Bootstrap the index
+
+After the AI Search instance is provisioned and the worker is deployed,
+trigger an initial index of the existing wiki via the admin route:
+
+```sh
+curl -s -X POST -H "X-Local-Dev-Email: cory@example.com" \
+  http://127.0.0.1:8788/api/_admin/search/reindex | jq .
+# Expected: { ok: true, data: { pages_indexed: N, errors: [] } }
+```
+
+In production, swap the dev header for the Access JWT from a
+workspace-owner browser session. The route walks
+`WikiBackend.listPaths('/wiki/')`, reads each page, and upserts it into
+both AI Search and the D1 FTS5 index. Per-page failures are logged but
+don't abort the whole run (matches the M5 archive isolation pattern).
+
+The route is idempotent — re-running it after a partial failure or
+schema migration is safe. Subsequent wiki edits via `PUT /api/wiki/*`
+re-upsert automatically; the admin route is only for backfill.
+
+### 3. Configure the AI Gateway daily cap (third layer of cost defense)
+
+The cost guards in `lib/cost-guard.ts` enforce per-user and
+per-workspace daily caps inside the worker. The third layer — a hard
+cap that survives a worker bug — lives in the AI Gateway dashboard:
+
+1. Open **AI → AI Gateway → Create gateway** (skip if you already
+   have one).
+2. Note the gateway slug (the path segment in
+   `https://gateway.ai.cloudflare.com/v1/{ACCOUNT_ID}/{SLUG}/...`).
+3. **Settings → Logs & Costs → Daily request cap**: set to the
+   per-deploy ceiling. Recommended starting value: **5000 ask
+   requests/day per workspace deploy**. Adjust to match the
+   per-workspace ask cap in `wrangler.jsonc` plus headroom for cache
+   hits and embedding calls.
+4. Set the gateway slug as `AI_GATEWAY_ID` and your account ID as
+   `CF_ACCOUNT_ID` in `wrangler.jsonc` `vars`. Without these, the
+   worker bypasses the gateway and you lose the third layer.
+5. Mint an AI Gateway token (**API tokens → Create token → Workers AI
+   → AI Gateway: Run**) and set it as a Worker secret:
+
+   ```sh
+   wrangler secret put AI_GATEWAY_TOKEN
+   ```
+
+The two in-worker layers (`LLM_DAILY_LIMIT_PER_USER_*` and
+`LLM_DAILY_LIMIT_PER_WORKSPACE_*` in `wrangler.jsonc` `vars`) plus the
+gateway cap give defense in depth — see ADR-0004 §c for why all three
+are necessary.
+
+### 4. Tune the daily limits
+
+```jsonc
+"vars": {
+  "LLM_DAILY_LIMIT_PER_USER_ASK": "100",
+  "LLM_DAILY_LIMIT_PER_USER_SEARCH": "1000",
+  "LLM_DAILY_LIMIT_PER_WORKSPACE_ASK": "1000",
+  "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000"
+}
+```
+
+Defaults are conservative for a small dogfood team. Rate-limited
+requests get `429 RATE_LIMITED` with
+`details: { limit, used, scope, reset_at }`; the web UI's
+`RateLimitBanner` renders the localtime reset.
+
+### 5. (Optional) Force the FTS5 fallback
+
+```jsonc
+"vars": {
+  "AI_SEARCH_ENABLED": "false"
+}
+```
+
+Skips the AI Search call entirely and goes straight to the D1 FTS5
+index. Useful for comparing result quality, debugging an AI Search
+outage, or running a fork that doesn't have AI Search enabled.
+
+### Local-dev path
+
+Two important limitations:
+
+- **AI Search is remote-only.** Local dev (`wrangler dev` with
+  `wrangler.dev.jsonc`) doesn't define the `ai_search` binding; the
+  worker auto-detects the missing binding and silently falls back to
+  FTS5. Search results carry `mode: "fts5_fallback"` and the web UI
+  shows the fallback banner. To exercise the AI Search path live,
+  use `wrangler dev --remote --config wrangler.jsonc`.
+- **Workers AI hits the real service in dev.** Unlike Artifacts,
+  Workers AI dispatches to Cloudflare's real backend even in local
+  dev — `pnpm dev` against the default Llama model spends free-tier
+  neurons. The cost guards still apply. `lib/llm.ts` emits a one-time
+  warning the first time a non-BYOK call goes out so you don't
+  forget. To run dev with no LLM cost: set
+  `LLM_DAILY_LIMIT_PER_USER_ASK=0` to refuse all calls.
+
+### Smoke verification
+
+```sh
+# Bootstrap a small wiki via the M4 routes (or via the bootstrap-vault
+# admin route). Then:
+
+DEV_HEADER='X-Local-Dev-Email: cory@example.com'
+
+# Reindex (FTS5 always; AI Search if available):
+curl -s -X POST -H "$DEV_HEADER" \
+  http://127.0.0.1:8788/api/_admin/search/reindex | jq .
+
+# Search:
+curl -s -X POST -H "$DEV_HEADER" -H "Content-Type: application/json" \
+  -d '{"query":"DMARC","topK":5}' \
+  http://127.0.0.1:8788/api/search | jq .
+# Local dev expected: { ok: true, data: { results: [...], mode: "fts5_fallback" } }
+# Prod expected:      { ok: true, data: { results: [...], mode: "hybrid" } }
+
+# /ask (SSE — note -N to disable curl buffering):
+curl -N -X POST -H "$DEV_HEADER" -H "Content-Type: application/json" \
+  -d '{"question":"What is our DMARC policy?"}' \
+  http://127.0.0.1:8788/api/ask
+# Expected: streaming SSE; data lines with "delta", then `event: citations`
+# carrying the citation array, then `event: done`.
+```
+
+The cost-guard 429 is reachable by lowering the per-user cap to a
+small number and calling /ask repeatedly:
+
+```sh
+# After exceeding the cap:
+# {"ok":false,"error":{"code":"RATE_LIMITED","message":"...",
+#   "details":{"limit":2,"used":2,"scope":"user","reset_at":"..."}}}
+```
+
 ## Right-to-deletion (operator note)
 
 Chat messages can be soft-deleted from D1 and the live DO. They cannot be

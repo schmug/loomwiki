@@ -1,0 +1,28 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Full-page wiki search. SSR-fetches /api/me to gate the page; the
+// actual search (POST /api/search) runs client-side from SearchPage.
+
+import AppShell from "@/components/AppShell.astro";
+import { SearchPage } from "@/components/search/SearchPage";
+import Layout from "@/layouts/Layout.astro";
+import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+---
+
+<Layout title={`Search — ${me.workspace.name}`}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <div slot="sidebar" class="p-4 text-xs text-muted-foreground">
+      Search across the wiki. Use the sidebar nav to switch surfaces.
+    </div>
+    <SearchPage slot="main" client:load />
+  </AppShell>
+</Layout>

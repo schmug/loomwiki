@@ -208,3 +208,73 @@ write `../../components/...`.
 - Hook tests: use `renderHook`. For chat-style hooks that own
   long-lived sockets, inject a fake via the `createClient` option to
   drive open/close/server events directly (see `useChat.test.tsx`).
+
+## Search + Ask (M6)
+
+The header carries a global search box; `/search` is the full-page
+version; `/ask` is the streamed-answer surface.
+
+- **SearchBar** ([src/components/search/SearchBar.tsx](src/components/search/SearchBar.tsx))
+  hydrates `client:idle` (deferred until the active surface settles).
+  - Hotkey: `⌘K` / `Ctrl+K` focuses the input from anywhere on the page.
+  - Debounced 200ms; cancels stale in-flight responses via a sequence
+    counter so a slow first request can't overwrite a faster second.
+  - Esc closes the dropdown; click-outside also closes.
+  - Click → `/w/<slug>` navigation (full-page nav, not SPA).
+- **SearchPage** ([src/components/search/SearchPage.tsx](src/components/search/SearchPage.tsx))
+  hydrates `client:load` and renders the same `SearchResults` list with
+  a full inline `RateLimitBanner` on 429.
+- **AskBox** ([src/components/ask/AskBox.tsx](src/components/ask/AskBox.tsx))
+  hydrates `client:load` (the SSE stream needs to be live on first
+  paint of `/ask`). Submit with `⌘+Enter` from the textarea, or click
+  the button. The Stop button calls `AbortController.abort()`. History
+  is in-memory only — reload clears it (M6 does not persist Q/A pairs).
+- **CitationPill** ([src/components/ask/CitationPill.tsx](src/components/ask/CitationPill.tsx))
+  is `inline-flex` so a list of pills wraps cleanly. Mirrors the
+  `FrontmatterPill` look but is an `<a>` with an `ArrowUpRight` icon.
+  Links to `/w/<slug>` plus `#<heading_slug>` when set.
+
+### `/api/ask` SSE wire format
+
+The route emits Server-Sent Events:
+
+```
+data: {"text": "incremental token"}\n\n
+event: citations\ndata: [{...}]\n\n
+event: done\ndata: {}\n\n
+```
+
+The consumer lives in [src/lib/api-ask.ts](src/lib/api-ask.ts). It uses
+`fetch` (not `EventSource`) because:
+
+1. `EventSource` is GET-only; `/api/ask` is POST.
+2. We need `credentials: include` (Access cookie) and the local-dev
+   `X-Local-Dev-Email` header.
+3. We want a real `AbortController` for the Stop button.
+
+When the worker rejects before any SSE frame (401, 429, 400 schema), it
+returns a normal JSON `ApiResult<err>`; we sniff `Content-Type` and
+surface an `ApiError` (or `AuthRequiredError`) to `onError`. A 429
+`RATE_LIMITED` carries `details: { limit, used, scope, reset_at }` which
+the AskBox unwraps and hands to `RateLimitBanner` directly.
+
+### Search snippet rendering
+
+`/api/search` returns FTS5 snippets with `<mark>...</mark>` tags around
+matched terms. We **do not** inject the snippet via the React HTML-prop
+escape hatch — [`SearchResults`](src/components/search/SearchResults.tsx)
+parses the snippet manually, treating only `<mark>` and `</mark>` as
+React `<mark>` elements and everything else as literal text. Any other
+tag (including a `<script>`) renders as visible text. This is the same
+defense-in-depth posture as the markdown sanitizer.
+
+### Local-dev fallback messaging
+
+When AI Search is unavailable (no `ai_search_id` on the workspace yet,
+or the index hasn't been built), the worker returns
+`mode: "fts5_fallback"`. The UI shows a small amber notice
+("Showing keyword matches only — semantic search is unavailable.") at
+the top of the result list and on the empty state. This is expected on
+fresh local dev environments before the operator runs the AI Search
+provisioning flow — point users at the M6 setup section of `DEPLOY.md`
+when they ask why ranking feels keyword-y.

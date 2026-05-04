@@ -126,6 +126,18 @@ const processor = unified()
   .use(rehypeStringify);
 
 /**
+ * Build a fresh remark-parse + remark-gfm processor that returns the
+ * mdast tree. Exported so the M6 chunker can walk the same AST the
+ * sanitizer parses without forking the plugin chain — drift between
+ * "what the sanitizer saw" and "what the chunker chunked" would mean
+ * a search hit that doesn't render. Returns a NEW unified() each call
+ * so callers don't share parser state across invocations.
+ */
+export function createMarkdownAstParser() {
+  return unified().use(remarkParse).use(remarkGfm);
+}
+
+/**
  * Render untrusted markdown to a sanitized HTML string. Safe to inject
  * into the DOM via React's HTML-injection prop once the caller wraps it
  * in `.md`-scoped styles (see apps/web/src/styles/global.css).
