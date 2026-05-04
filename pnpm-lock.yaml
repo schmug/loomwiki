@@ -107,6 +107,9 @@ importers:
       uuidv7:
         specifier: ^1.0.2
         version: 1.2.1
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.6.3

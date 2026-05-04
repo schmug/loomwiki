@@ -11,7 +11,8 @@
     "./id": "./src/id.ts",
     "./error": "./src/error.ts",
     "./errors": "./src/errors.ts",
-    "./result": "./src/result.ts"
+    "./result": "./src/result.ts",
+    "./ws-protocol": "./src/ws-protocol.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit false --emitDeclarationOnly",
@@ -19,7 +20,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "uuidv7": "^1.0.2"
+    "uuidv7": "^1.0.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
