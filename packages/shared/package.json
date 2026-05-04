@@ -10,6 +10,7 @@
     ".": "./src/index.ts",
     "./id": "./src/id.ts",
     "./error": "./src/error.ts",
+    "./errors": "./src/errors.ts",
     "./result": "./src/result.ts"
   },
   "scripts": {
