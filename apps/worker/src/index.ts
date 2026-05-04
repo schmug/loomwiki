@@ -8,9 +8,12 @@ import { type AuthEnv, authMiddleware } from "./middleware/auth.js";
 import { registerErrorHandler } from "./middleware/error.js";
 import { debugRoute } from "./routes/_debug.js";
 import { adminCronRoute } from "./routes/admin-cron.js";
+import { adminSearchRoute } from "./routes/admin-search.js";
+import { askRoute } from "./routes/ask.js";
 import { healthRoute } from "./routes/health.js";
 import { meRoute } from "./routes/me.js";
 import { roomsRoute } from "./routes/rooms.js";
+import { searchRoute } from "./routes/search.js";
 import { wikiRoute } from "./routes/wiki.js";
 import { workspacesRoute } from "./routes/workspaces.js";
 import { scheduled } from "./scheduled.js";
@@ -32,6 +35,12 @@ app.use("/api/wiki/*", authMiddleware);
 app.use("/api/wiki-tree", authMiddleware);
 app.use("/api/_admin/wiki/*", authMiddleware);
 app.use("/api/_admin/cron/*", authMiddleware);
+// M6: search + RAG ask + reindex admin. The cost guard runs inside
+// each route, but the auth middleware is the gate that ensures we
+// have a workspace + user to charge.
+app.use("/api/search", authMiddleware);
+app.use("/api/ask", authMiddleware);
+app.use("/api/_admin/search/*", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -44,6 +53,11 @@ app.route("/api", wikiRoute);
 // only, enforced inside the route handler. Mounted at /api so the
 // route handler defines the absolute path.
 app.route("/api", adminCronRoute);
+// M6 search/ask/reindex routes. Mounted at /api so each route file
+// declares the absolute path (mirrors the wiki + admin-cron pattern).
+app.route("/api", searchRoute);
+app.route("/api", askRoute);
+app.route("/api", adminSearchRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),
