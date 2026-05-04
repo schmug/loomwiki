@@ -46,6 +46,16 @@ export interface Env {
   AI_SEARCH_INSTANCE: string;
   GIT_COMMIT?: string;
 
+  // Cloudflare Access — operator must override these in production via the
+  // dashboard or a wrangler env section. Defaults in wrangler.jsonc are dev
+  // placeholders that tests exercise via mocked JWKS in KV.
+  ACCESS_TEAM: string;
+  ACCESS_AUD: string;
+
+  // Local-dev auth bypass. Triple-gated; see middleware/auth.ts. Default off.
+  ALLOW_LOCAL_DEV_AUTH: string;
+  LOCAL_DEV_EMAIL: string;
+
   // Secrets — undefined locally unless set via .dev.vars
   SENTRY_DSN?: string;
   BYOK_ENCRYPTION_KEY?: string;

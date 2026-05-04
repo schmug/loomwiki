@@ -42,7 +42,18 @@
     "DEFAULT_LLM_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
     "ARTIFACTS_REPO": "loomwiki-vault",
-    "AI_SEARCH_INSTANCE": "loomwiki-search"
+    "AI_SEARCH_INSTANCE": "loomwiki-search",
+    // Cloudflare Access — operators MUST override these in production via the
+    // dashboard or a wrangler `env` block. The dev defaults below match the
+    // values vitest tests use (with mocked JWKS in KV); they are not valid
+    // for a real Access tenant.
+    "ACCESS_TEAM": "loomwiki-dev",
+    "ACCESS_AUD": "loomwiki-dev-aud",
+    // Local-dev auth bypass (X-Local-Dev-Email header). Triple-gated; see
+    // apps/worker/src/middleware/auth.ts. Default off; flip to "true" via
+    // .dev.vars for local development only.
+    "ALLOW_LOCAL_DEV_AUTH": "false",
+    "LOCAL_DEV_EMAIL": ""
   },
   "observability": {
     "enabled": true,
