@@ -29,6 +29,8 @@ const { workspaceName, userDisplayName } = Astro.props;
 const hasRightRail = Astro.slots.has("right-rail");
 const pathname = new URL(Astro.request.url).pathname;
 const onWiki = pathname.startsWith("/w");
+const onAsk = pathname.startsWith("/ask");
+const onChat = !onWiki && !onAsk;
 ---
 
 <style>
@@ -62,11 +64,11 @@ const onWiki = pathname.startsWith("/w");
           href="/"
           class:list={[
             "flex-1 px-3 py-2 text-center text-sm font-medium transition-colors",
-            !onWiki
+            onChat
               ? "bg-background text-foreground"
               : "text-muted-foreground hover:bg-background/60",
           ]}
-          aria-current={!onWiki ? "page" : undefined}>Chat</a
+          aria-current={onChat ? "page" : undefined}>Chat</a
         >
         <a
           href="/w"
@@ -77,6 +79,16 @@ const onWiki = pathname.startsWith("/w");
               : "text-muted-foreground hover:bg-background/60",
           ]}
           aria-current={onWiki ? "page" : undefined}>Wiki</a
+        >
+        <a
+          href="/ask"
+          class:list={[
+            "flex-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+            onAsk
+              ? "bg-background text-foreground"
+              : "text-muted-foreground hover:bg-background/60",
+          ]}
+          aria-current={onAsk ? "page" : undefined}>Ask</a
         >
       </nav>
       <slot name="sidebar" />

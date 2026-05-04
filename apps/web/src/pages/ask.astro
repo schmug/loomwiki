@@ -1,0 +1,30 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// /ask page. SSR-fetches /api/me to gate; the actual question/answer
+// streaming runs client-side from AskBox via the SSE consumer in
+// lib/api-ask.ts.
+
+import AppShell from "@/components/AppShell.astro";
+import { AskPage } from "@/components/ask/AskPage";
+import Layout from "@/layouts/Layout.astro";
+import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+---
+
+<Layout title={`Ask — ${me.workspace.name}`}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <div slot="sidebar" class="p-4 text-xs text-muted-foreground">
+      <p class="font-medium text-foreground">Ask</p>
+      <p class="mt-1">Answers grounded in your wiki, with citations.</p>
+    </div>
+    <AskPage slot="main" client:load />
+  </AppShell>
+</Layout>

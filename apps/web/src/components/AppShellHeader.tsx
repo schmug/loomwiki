@@ -6,6 +6,7 @@
 // on first paint.
 
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SearchBar } from "@/components/search/SearchBar";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -45,6 +46,9 @@ export function AppShellHeader({ workspaceName, userDisplayName }: AppShellHeade
         Loomwiki
       </a>
       <span className="hidden text-xs text-muted-foreground sm:inline">{workspaceName}</span>
+      <div className="hidden flex-1 px-4 md:block lg:max-w-md">
+        <SearchBar />
+      </div>
       <div className="ml-auto flex items-center gap-3">
         <span className="hidden text-xs text-muted-foreground sm:inline">
           Signed in as <span className="text-foreground">{userDisplayName}</span>
