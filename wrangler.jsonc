@@ -46,6 +46,19 @@
     { "binding": "WIKI_KV", "id": "<TBD>" }
   ],
   "ai": { "binding": "AI" },
+  // M6: AI Search hybrid (BM25 + vector) over the workspace vault.
+  // Operators must provision the instance once via the Cloudflare
+  // dashboard or CLI (see DEPLOY.md §AI Search) — the binding here is
+  // the wire-up; the instance itself is workspace-side configuration.
+  // The ai-search.ts wrapper auto-falls-back to the D1 FTS5 index when
+  // the binding is missing, throws, or returns 5xx, so this binding is
+  // soft-required: code paths still work in local dev without it.
+  "ai_search": [
+    {
+      "binding": "AI_SEARCH",
+      "instance_name": "loomwiki-search"
+    }
+  ],
   "artifacts": [
     {
       "binding": "ARTIFACTS",
@@ -69,7 +82,33 @@
     // apps/worker/src/middleware/auth.ts. Default off; flip to "true" via
     // .dev.vars for local development only.
     "ALLOW_LOCAL_DEV_AUTH": "false",
-    "LOCAL_DEV_EMAIL": ""
+    "LOCAL_DEV_EMAIL": "",
+    // M6: AI Search + cost guards.
+    //
+    // AI_SEARCH_ENABLED defaults to "true". Set to "false" to skip the
+    // AI Search call entirely and go straight to the D1 FTS5 fallback —
+    // useful when the binding is misconfigured or you want to compare
+    // result quality.
+    //
+    // AI_GATEWAY_ID is the Gateway slug (the path segment in the URL
+    // https://gateway.ai.cloudflare.com/v1/{ACCOUNT_ID}/{AI_GATEWAY_ID}/...).
+    // Empty string disables the Gateway wrapper and routes calls direct
+    // to the AI binding (loses the global daily-cap layer; see
+    // docs/SECURITY.md §7).
+    //
+    // CF_ACCOUNT_ID is required for AI Gateway URL composition. It is
+    // safe to expose (it's an account identifier, not a secret); set it
+    // to the operator's Cloudflare account ID at deploy time.
+    "AI_SEARCH_ENABLED": "true",
+    "AI_GATEWAY_ID": "",
+    "CF_ACCOUNT_ID": "",
+    // Daily caps. Per-user gates a typical bad actor; per-workspace
+    // gates a coordinated abuse vector inside one workspace. AI Gateway
+    // hard daily cap is configured separately via the CF dashboard.
+    "LLM_DAILY_LIMIT_PER_USER_ASK": "100",
+    "LLM_DAILY_LIMIT_PER_USER_SEARCH": "1000",
+    "LLM_DAILY_LIMIT_PER_WORKSPACE_ASK": "1000",
+    "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000"
   },
   "observability": {
     "enabled": true,

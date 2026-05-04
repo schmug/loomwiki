@@ -54,7 +54,18 @@
     "ACCESS_TEAM": "loomwiki-dev",
     "ACCESS_AUD": "loomwiki-dev-aud",
     "ALLOW_LOCAL_DEV_AUTH": "false",
-    "LOCAL_DEV_EMAIL": ""
+    "LOCAL_DEV_EMAIL": "",
+    // M6: AI Search auto-detect catches the missing binding here and
+    // falls through to the D1 FTS5 fallback so local dev still works.
+    // Workers AI binding is exercised against the real service even in
+    // dev (free-tier neurons); see docs/DEPLOY.md §Local dev costs.
+    "AI_SEARCH_ENABLED": "true",
+    "AI_GATEWAY_ID": "",
+    "CF_ACCOUNT_ID": "",
+    "LLM_DAILY_LIMIT_PER_USER_ASK": "100",
+    "LLM_DAILY_LIMIT_PER_USER_SEARCH": "1000",
+    "LLM_DAILY_LIMIT_PER_WORKSPACE_ASK": "1000",
+    "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000"
   },
   "observability": {
     "enabled": true,
