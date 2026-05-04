@@ -16,6 +16,7 @@ export async function applyMigrations(): Promise<void> {
 
 // Truncate the application tables. Order respects FK references.
 const TRUNCATE_ORDER = [
+  "llm_usage_daily",
   "byok_keys",
   "proposals",
   "ingest_runs",
