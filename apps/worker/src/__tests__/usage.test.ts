@@ -54,7 +54,7 @@ describe("getUsage", () => {
       scopeType: "user",
       scopeId: userA,
     });
-    expect(usage).toEqual({ ask_count: 0, search_count: 0 });
+    expect(usage).toEqual({ ask_count: 0, search_count: 0, ingest_count: 0 });
   });
 });
 
@@ -64,11 +64,13 @@ describe("incrementUsage", () => {
     const scope = { workspaceId: DEFAULT_WORKSPACE_ID, scopeType: "user" as const, scopeId: userA };
 
     let usage = await incrementUsage(env, scope, "ask");
-    expect(usage).toEqual({ ask_count: 1, search_count: 0 });
+    expect(usage).toEqual({ ask_count: 1, search_count: 0, ingest_count: 0 });
     usage = await incrementUsage(env, scope, "ask");
-    expect(usage).toEqual({ ask_count: 2, search_count: 0 });
+    expect(usage).toEqual({ ask_count: 2, search_count: 0, ingest_count: 0 });
     usage = await incrementUsage(env, scope, "search");
-    expect(usage).toEqual({ ask_count: 2, search_count: 1 });
+    expect(usage).toEqual({ ask_count: 2, search_count: 1, ingest_count: 0 });
+    usage = await incrementUsage(env, scope, "ingest");
+    expect(usage).toEqual({ ask_count: 2, search_count: 1, ingest_count: 1 });
   });
 
   it("is race-safe under concurrent increments (ON CONFLICT DO UPDATE)", async () => {
@@ -142,6 +144,10 @@ describe("resetUsageToday", () => {
     const scope = { workspaceId: DEFAULT_WORKSPACE_ID, scopeType: "user" as const, scopeId: userA };
     await incrementUsage(env, scope, "ask");
     await resetUsageToday(env, scope);
-    expect(await getUsage(env, scope)).toEqual({ ask_count: 0, search_count: 0 });
+    expect(await getUsage(env, scope)).toEqual({
+      ask_count: 0,
+      search_count: 0,
+      ingest_count: 0,
+    });
   });
 });

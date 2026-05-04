@@ -10,6 +10,8 @@
 
 import { RateLimitBanner } from "@/components/RateLimitBanner";
 import { CitationPill } from "@/components/ask/CitationPill";
+import { ProposalDetail } from "@/components/inbox/ProposalDetail";
+import { ProposalsList } from "@/components/inbox/ProposalsList";
 import { SearchResults } from "@/components/search/SearchResults";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { FrontmatterPill } from "@/components/wiki/FrontmatterPill";
+import type { SerializedProposal, WikiPagePayload } from "@/lib/types";
 
 export interface DesignSamplesProps {
   mode: "light" | "dark";
@@ -168,6 +171,46 @@ export function DesignSamples({ mode }: DesignSamplesProps) {
       <Separator />
 
       <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">
+          Inbox — proposals list
+        </p>
+        <div className="rounded-md border border-border">
+          <p className="border-b border-border bg-secondary/30 px-3 py-1 text-[11px] uppercase text-muted-foreground">
+            Empty state
+          </p>
+          <ProposalsList proposals={[]} />
+        </div>
+        <div className="rounded-md border border-border">
+          <p className="border-b border-border bg-secondary/30 px-3 py-1 text-[11px] uppercase text-muted-foreground">
+            Populated
+          </p>
+          <ProposalsList proposals={[CREATE_PROPOSAL_SAMPLE, UPDATE_PROPOSAL_SAMPLE]} />
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">
+          Inbox — proposal detail (create)
+        </p>
+        <div className="h-96 overflow-hidden rounded-md border border-border">
+          <ProposalDetail proposal={CREATE_PROPOSAL_SAMPLE} currentPage={null} />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">
+          Inbox — proposal detail (update with current page)
+        </p>
+        <div className="h-96 overflow-hidden rounded-md border border-border">
+          <ProposalDetail proposal={UPDATE_PROPOSAL_SAMPLE} currentPage={CURRENT_PAGE_SAMPLE} />
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
         <p className="text-xs font-medium uppercase text-muted-foreground">Search empty states</p>
         <div className="rounded-md border border-border">
           <p className="border-b border-border bg-secondary/30 px-3 py-1 text-[11px] uppercase text-muted-foreground">
@@ -190,3 +233,87 @@ export function DesignSamples({ mode }: DesignSamplesProps) {
     </div>
   );
 }
+
+// ---------- Inbox sample data (M7) ----------
+
+const CREATE_PROPOSAL_SAMPLE: SerializedProposal = {
+  id: "01970000-0000-7000-8000-000000000010",
+  run_id: "01970000-0000-7000-8000-000000000020",
+  page_path: "/wiki/decisions/2026-05-dmarc-rollout.md",
+  action: "create",
+  before_sha: null,
+  after_content: `---
+title: DMARC Rollout
+kind: decision
+created: 2026-05-04
+last_updated: 2026-05-04
+status: draft
+---
+
+# DMARC Rollout
+
+## Context
+
+The team discussed moving from \`p=none\` to \`p=quarantine\` for K-12 tenants.
+
+## Decision
+
+Approved — staged rollout starting Friday.
+
+## Consequences
+
+- Immediate: spam folders see legitimate-but-misaligned mail.
+- Long term: vendor cleanup pressure increases.
+`,
+  rationale:
+    "Two messages established this as an explicit team decision, with rollout date and consequences discussed.",
+  status: "pending",
+  created_at: new Date(Date.now() - 1000 * 60 * 17).toISOString(),
+  reviewed_at: null,
+  reviewed_by: null,
+  artifacts_commit: null,
+};
+
+const UPDATE_PROPOSAL_SAMPLE: SerializedProposal = {
+  id: "01970000-0000-7000-8000-000000000011",
+  run_id: "01970000-0000-7000-8000-000000000020",
+  page_path: "/wiki/concepts/spf.md",
+  action: "update",
+  before_sha: "deadbeef".repeat(8),
+  after_content: `---
+title: SPF
+kind: concept
+created: 2026-04-12
+last_updated: 2026-05-04
+status: published
+---
+
+# SPF
+
+Sender Policy Framework. Authorized-sender allowlist published in DNS.
+
+## Common pitfalls
+
+- 10-lookup limit — flatten with subzones if you exceed.
+- Forwarding strips alignment without ARC.
+`,
+  rationale: "New section on common pitfalls; flagged via two messages this morning.",
+  status: "pending",
+  created_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
+  reviewed_at: null,
+  reviewed_by: null,
+  artifacts_commit: null,
+};
+
+const CURRENT_PAGE_SAMPLE: WikiPagePayload = {
+  path: "/wiki/concepts/spf.md",
+  frontmatter: {
+    title: "SPF",
+    kind: "concept",
+    created: "2026-04-12",
+    last_updated: "2026-04-12",
+    status: "published",
+  },
+  body: "# SPF\n\nSender Policy Framework. Authorized-sender allowlist published in DNS.",
+  sha: "deadbeef".repeat(8),
+};

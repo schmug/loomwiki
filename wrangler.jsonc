@@ -108,14 +108,25 @@
     "LLM_DAILY_LIMIT_PER_USER_ASK": "100",
     "LLM_DAILY_LIMIT_PER_USER_SEARCH": "1000",
     "LLM_DAILY_LIMIT_PER_WORKSPACE_ASK": "1000",
-    "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000"
+    "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000",
+    // M7: ingest cost guard. Workspace-scoped only (no per-user cap)
+    // because manual triggers come from members but the LLM spend
+    // happens against a shared resource (the room's vault). Cron runs
+    // also charge against this budget. Default 100 runs/day per
+    // workspace — comfortably above the expected ~10/day for a
+    // dogfood team plus admin backfill.
+    "INGEST_DAILY_LIMIT_PER_WORKSPACE": "100"
   },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1.0
   },
   "triggers": {
-    // 02:00 UTC daily — chat-log → Artifacts commit (lands in M5)
-    "crons": ["0 2 * * *"]
+    // 02:00 UTC daily — chat-log → Artifacts commit (M5).
+    // 03:00 UTC daily — ingest scan (M7), 60 min after the archive
+    // lands so the same day's chat is fully reflected in /rooms/* before
+    // the agent runs. Both crons dispatch through scheduled() in
+    // apps/worker/src/scheduled.ts via controller.cron switch.
+    "crons": ["0 2 * * *", "0 3 * * *"]
   }
 }

@@ -24,9 +24,11 @@ const wallClock: Clock = () => Date.now();
 export interface UsageCounts {
   ask_count: number;
   search_count: number;
+  /** M7: ingest run counter. Workspace-scoped only is read by cost-guard. */
+  ingest_count: number;
 }
 
-const ZERO_COUNTS: UsageCounts = { ask_count: 0, search_count: 0 };
+const ZERO_COUNTS: UsageCounts = { ask_count: 0, search_count: 0, ingest_count: 0 };
 
 /**
  * Compute the UTC day key (YYYY-MM-DD) for a given epoch-ms clock
@@ -67,12 +69,16 @@ export async function getUsage(
 ): Promise<UsageCounts> {
   const day = utcDayKey(clock());
   const row = await env.DB.prepare(
-    "SELECT ask_count, search_count FROM llm_usage_daily WHERE workspace_id = ? AND day = ? AND scope_type = ? AND scope_id = ?",
+    "SELECT ask_count, search_count, ingest_count FROM llm_usage_daily WHERE workspace_id = ? AND day = ? AND scope_type = ? AND scope_id = ?",
   )
     .bind(scope.workspaceId, day, scope.scopeType, scope.scopeId)
-    .first<{ ask_count: number; search_count: number }>();
+    .first<{ ask_count: number; search_count: number; ingest_count: number }>();
   if (row === null) return { ...ZERO_COUNTS };
-  return { ask_count: row.ask_count ?? 0, search_count: row.search_count ?? 0 };
+  return {
+    ask_count: row.ask_count ?? 0,
+    search_count: row.search_count ?? 0,
+    ingest_count: row.ingest_count ?? 0,
+  };
 }
 
 /**
@@ -90,19 +96,30 @@ export async function incrementUsage(
   const day = utcDayKey(clock());
   const askDelta = kind === "ask" ? 1 : 0;
   const searchDelta = kind === "search" ? 1 : 0;
+  const ingestDelta = kind === "ingest" ? 1 : 0;
 
   // INSERT-or-UPDATE in a single statement. The PK is composite, so
   // the conflict target enumerates all four columns.
   await env.DB.prepare(
     `INSERT INTO llm_usage_daily
-       (workspace_id, day, scope_type, scope_id, ask_count, search_count, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+       (workspace_id, day, scope_type, scope_id, ask_count, search_count, ingest_count, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(workspace_id, day, scope_type, scope_id) DO UPDATE SET
-       ask_count    = ask_count + excluded.ask_count,
+       ask_count    = ask_count    + excluded.ask_count,
        search_count = search_count + excluded.search_count,
+       ingest_count = ingest_count + excluded.ingest_count,
        updated_at   = excluded.updated_at`,
   )
-    .bind(scope.workspaceId, day, scope.scopeType, scope.scopeId, askDelta, searchDelta, now)
+    .bind(
+      scope.workspaceId,
+      day,
+      scope.scopeType,
+      scope.scopeId,
+      askDelta,
+      searchDelta,
+      ingestDelta,
+      now,
+    )
     .run();
 
   return getUsage(env, scope, clock);

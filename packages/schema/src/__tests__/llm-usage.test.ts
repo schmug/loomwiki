@@ -23,12 +23,13 @@ describe("LlmUsageRowSchema", () => {
         scope_id: VALID_UUID,
         ask_count: 5,
         search_count: 22,
+        ingest_count: 0,
         updated_at: 1_730_000_000,
       }),
     ).toBeTruthy();
   });
 
-  it("accepts the workspace sentinel", () => {
+  it("accepts the workspace sentinel with all three counters", () => {
     expect(
       LlmUsageRowSchema.parse({
         workspace_id: VALID_WORKSPACE,
@@ -37,6 +38,7 @@ describe("LlmUsageRowSchema", () => {
         scope_id: "_workspace",
         ask_count: 0,
         search_count: 0,
+        ingest_count: 7,
         updated_at: 1_730_000_000,
       }),
     ).toBeTruthy();
@@ -51,6 +53,19 @@ describe("LlmUsageRowSchema", () => {
         scope_id: VALID_UUID,
         ask_count: -1,
         search_count: 0,
+        ingest_count: 0,
+        updated_at: 1_730_000_000,
+      }).success,
+    ).toBe(false);
+    expect(
+      LlmUsageRowSchema.safeParse({
+        workspace_id: VALID_WORKSPACE,
+        day: "2026-05-04",
+        scope_type: "workspace",
+        scope_id: "_workspace",
+        ask_count: 0,
+        search_count: 0,
+        ingest_count: -3,
         updated_at: 1_730_000_000,
       }).success,
     ).toBe(false);
@@ -65,6 +80,7 @@ describe("LlmUsageRowSchema", () => {
         scope_id: VALID_UUID,
         ask_count: 0,
         search_count: 0,
+        ingest_count: 0,
         updated_at: 1_730_000_000,
       }).success,
     ).toBe(false);
@@ -79,6 +95,7 @@ describe("LlmUsageRowSchema", () => {
         scope_id: "_workspace",
         ask_count: 0,
         search_count: 0,
+        ingest_count: 0,
         updated_at: 1_730_000_000,
       }).success,
     ).toBe(false);

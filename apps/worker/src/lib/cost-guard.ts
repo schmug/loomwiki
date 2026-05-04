@@ -28,6 +28,13 @@ import { type Clock, getUsage, incrementUsage, nextUtcMidnightIso } from "./usag
 export interface AssertWithinLimitArgs {
   env: Env;
   workspaceId: string;
+  /**
+   * For kind ∈ {"ask","search"}, the user driving the request. The
+   * cost-guard charges both their per-user and the per-workspace
+   * counter. For kind="ingest" the userId is unused (workspace-scoped
+   * only), but callers still pass the triggering user (or the literal
+   * "cron") for symmetry; the value is recorded but not enforced.
+   */
   userId: string;
   kind: LlmUsageKind;
   /** Test seam — defaults to wall clock. */
@@ -39,6 +46,8 @@ export interface DailyLimits {
   perUserSearch: number;
   perWorkspaceAsk: number;
   perWorkspaceSearch: number;
+  /** M7: workspace-scoped only — no per-user cap. */
+  perWorkspaceIngest: number;
 }
 
 const DEFAULTS: DailyLimits = {
@@ -46,6 +55,7 @@ const DEFAULTS: DailyLimits = {
   perUserSearch: 1000,
   perWorkspaceAsk: 1000,
   perWorkspaceSearch: 10000,
+  perWorkspaceIngest: 100,
 };
 
 function parseLimit(raw: string | undefined, fallback: number): number {
@@ -63,6 +73,10 @@ export function readLimits(env: Env): DailyLimits {
     perWorkspaceSearch: parseLimit(
       env.LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH,
       DEFAULTS.perWorkspaceSearch,
+    ),
+    perWorkspaceIngest: parseLimit(
+      env.INGEST_DAILY_LIMIT_PER_WORKSPACE,
+      DEFAULTS.perWorkspaceIngest,
     ),
   };
 }
@@ -86,17 +100,52 @@ function rateLimitError(details: RateLimitDetails): LoomwikiError {
 
 /**
  * Throws `LoomwikiError("RATE_LIMITED", ...)` if either cap would be
- * exceeded by this call; otherwise increments BOTH the per-user and
- * per-workspace counters and returns. Counters increment before the
- * LLM call, never after — see module-level note on disconnect handling.
+ * exceeded by this call; otherwise increments the appropriate counters
+ * and returns. Counters increment before the LLM call, never after —
+ * see module-level note on disconnect handling.
+ *
+ * Scope rules per kind:
+ *   - kind="ask" / "search": both per-user AND per-workspace counters
+ *     are read and incremented. Per-user fails first in error reporting.
+ *   - kind="ingest": ONLY the per-workspace counter. Manual triggers
+ *     come from members but the operation is workspace-scoped (one
+ *     ingest run per room, regardless of who triggered it). Cron runs
+ *     have no user identity at all (`userId === "cron"`). Sharing the
+ *     budget across users matches the resource shape: ingest spends
+ *     LLM tokens against the workspace's vault, not against the
+ *     user's personal allowance.
  */
 export async function assertWithinLimit(args: AssertWithinLimitArgs): Promise<void> {
   const limits = readLimits(args.env);
-  const userLimit = args.kind === "ask" ? limits.perUserAsk : limits.perUserSearch;
-  const workspaceLimit = args.kind === "ask" ? limits.perWorkspaceAsk : limits.perWorkspaceSearch;
-
   const clockMs = (args.clock ?? Date.now)();
   const resetAt = nextUtcMidnightIso(clockMs);
+
+  if (args.kind === "ingest") {
+    const wsUsage = await getUsage(
+      args.env,
+      { workspaceId: args.workspaceId, scopeType: "workspace", scopeId: WORKSPACE_SCOPE_ID },
+      args.clock,
+    );
+    const wsUsed = wsUsage.ingest_count;
+    if (wsUsed >= limits.perWorkspaceIngest) {
+      throw rateLimitError({
+        limit: limits.perWorkspaceIngest,
+        used: wsUsed,
+        scope: "workspace",
+        reset_at: resetAt,
+      });
+    }
+    await incrementUsage(
+      args.env,
+      { workspaceId: args.workspaceId, scopeType: "workspace", scopeId: WORKSPACE_SCOPE_ID },
+      "ingest",
+      args.clock,
+    );
+    return;
+  }
+
+  const userLimit = args.kind === "ask" ? limits.perUserAsk : limits.perUserSearch;
+  const workspaceLimit = args.kind === "ask" ? limits.perWorkspaceAsk : limits.perWorkspaceSearch;
 
   // Read both counters before deciding. Reading first means a single
   // request that would push BOTH counters over the cap reports the

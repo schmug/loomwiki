@@ -1,0 +1,59 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Workspace inbox — lists pending proposals + a link to today's
+// digest page in the wiki. SSR-fetches both /api/me (for the AppShell
+// header) and /api/proposals?status=pending (for the list).
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import { ProposalsList } from "@/components/inbox/ProposalsList";
+import Layout from "@/layouts/Layout.astro";
+import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload, ProposalsListResponse } from "@/lib/types";
+
+let me: CurrentUserPayload;
+let proposals: ProposalsListResponse;
+try {
+  [me, proposals] = await Promise.all([
+    ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me"),
+    ssrApiGet<ProposalsListResponse>(Astro.request, "/api/proposals?status=pending"),
+  ]);
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+const today = new Date().toISOString().slice(0, 10);
+const digestHref = `/w/_inbox/${today}.md`;
+---
+
+<Layout title={`Inbox — ${me.workspace.name}`}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <RoomList
+      slot="sidebar"
+      client:idle
+      workspaceId={me.workspace.id}
+      rooms={me.rooms}
+    />
+    <div slot="main" class="flex h-full min-h-0 flex-col">
+      <header class="flex items-center justify-between border-b border-border px-6 py-4">
+        <div>
+          <h1 class="text-lg font-semibold">Inbox</h1>
+          <p class="text-xs text-muted-foreground">
+            {proposals.proposals.length} pending proposal{proposals.proposals.length === 1 ? "" : "s"}.
+            The agent runs at 03:00 UTC daily and on-demand from any chat room.
+          </p>
+        </div>
+        <a
+          href={digestHref}
+          class="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        >
+          Today's digest →
+        </a>
+      </header>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <ProposalsList proposals={proposals.proposals} />
+      </div>
+    </div>
+  </AppShell>
+</Layout>

@@ -1,0 +1,66 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Per-proposal review page. SSR-fetches the proposal + (for `update`
+// actions) the current wiki page so the side-by-side viewer can
+// render both halves on first paint. Mounts <ProposalDetail
+// client:load> so merge/reject can call the API without a full
+// re-render.
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import { ProposalDetail } from "@/components/inbox/ProposalDetail";
+import Layout from "@/layouts/Layout.astro";
+import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type {
+  CurrentUserPayload,
+  ProposalDetailResponse,
+  WikiPagePayload,
+  WikiPageReadResponse,
+} from "@/lib/types";
+
+const { id } = Astro.params;
+if (!id) return Astro.redirect("/inbox");
+
+let me: CurrentUserPayload;
+let detail: ProposalDetailResponse;
+try {
+  [me, detail] = await Promise.all([
+    ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me"),
+    ssrApiGet<ProposalDetailResponse>(Astro.request, `/api/proposals/${encodeURIComponent(id)}`),
+  ]);
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  if (err instanceof SsrApiError && err.status === 404) {
+    return new Response("Proposal not found", { status: 404 });
+  }
+  throw err;
+}
+
+let currentPage: WikiPagePayload | null = null;
+if (detail.proposal.action === "update") {
+  try {
+    const fetched = await ssrApiGet<WikiPageReadResponse>(
+      Astro.request,
+      `/api${detail.proposal.page_path}`,
+    );
+    currentPage = fetched.page;
+  } catch (err) {
+    // 404 is the legitimate "page was deleted" state — leave null.
+    if (!(err instanceof SsrApiError && err.status === 404)) throw err;
+  }
+}
+---
+
+<Layout title={`Proposal — ${detail.proposal.page_path}`}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <RoomList
+      slot="sidebar"
+      client:idle
+      workspaceId={me.workspace.id}
+      rooms={me.rooms}
+    />
+    <div slot="main" class="h-full min-h-0">
+      <ProposalDetail client:load proposal={detail.proposal} currentPage={currentPage} />
+    </div>
+  </AppShell>
+</Layout>

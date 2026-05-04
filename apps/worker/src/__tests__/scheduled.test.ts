@@ -42,14 +42,17 @@ function makeCtx(): FakeCtx {
   };
 }
 
-function controllerAt(iso: string): {
+function controllerAt(
+  iso: string,
+  cron = "0 2 * * *",
+): {
   scheduledTime: number;
   cron: string;
   noRetry: () => void;
 } {
   return {
     scheduledTime: Date.parse(iso),
-    cron: "0 2 * * *",
+    cron,
     noRetry: () => {},
   };
 }
@@ -76,6 +79,42 @@ describe("scheduled handler", () => {
     await scheduled(controller as any, env, ctx as any);
     // The waitUntil promise resolves cleanly (no rooms → no errors).
     await expect(promise).resolves.toBeUndefined();
+  });
+
+  it("dispatches the M7 ingest cron (0 3 * * *) without throwing on an empty workspace", async () => {
+    const ctx = makeCtx();
+    let promise: Promise<unknown> | undefined;
+    ctx.waitUntil.mockImplementation((p: Promise<unknown>) => {
+      promise = p;
+    });
+    const controller = controllerAt("2026-05-04T03:00:00Z", "0 3 * * *");
+    // biome-ignore lint/suspicious/noExplicitAny: ScheduledController shape mismatch
+    await scheduled(controller as any, env, ctx as any);
+    await expect(promise).resolves.toBeUndefined();
+
+    // The digest page for today should now exist (empty state).
+    const list = await env.WIKI_KV.list({ prefix: "wiki:/wiki/_inbox/" });
+    expect(list.keys.length).toBeGreaterThan(0);
+  });
+
+  it("logs a warning for an unrecognized cron string instead of failing", async () => {
+    const logs: unknown[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((arg: unknown) => {
+      logs.push(arg);
+    });
+    const ctx = makeCtx();
+    const controller = controllerAt("2026-05-04T04:00:00Z", "0 4 * * *");
+    // biome-ignore lint/suspicious/noExplicitAny: ScheduledController shape mismatch
+    await scheduled(controller as any, env, ctx as any);
+    spy.mockRestore();
+
+    const matched = logs.find(
+      (entry): entry is { event: string; cron: string } =>
+        typeof entry === "object" &&
+        entry !== null &&
+        (entry as { event?: unknown }).event === "cron_unrecognized",
+    );
+    expect(matched?.cron).toBe("0 4 * * *");
   });
 
   it("computes previous-UTC-day correctly across the date boundary", async () => {

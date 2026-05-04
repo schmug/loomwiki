@@ -10,9 +10,13 @@ import { debugRoute } from "./routes/_debug.js";
 import { adminCronRoute } from "./routes/admin-cron.js";
 import { adminSearchRoute } from "./routes/admin-search.js";
 import { askRoute } from "./routes/ask.js";
+import { digestRoute } from "./routes/digest.js";
 import { healthRoute } from "./routes/health.js";
+import { ingestRoute } from "./routes/ingest.js";
 import { meRoute } from "./routes/me.js";
+import { proposalsRoute } from "./routes/proposals.js";
 import { roomsRoute } from "./routes/rooms.js";
+import { runsRoute } from "./routes/runs.js";
 import { searchRoute } from "./routes/search.js";
 import { wikiRoute } from "./routes/wiki.js";
 import { workspacesRoute } from "./routes/workspaces.js";
@@ -41,6 +45,11 @@ app.use("/api/_admin/cron/*", authMiddleware);
 app.use("/api/search", authMiddleware);
 app.use("/api/ask", authMiddleware);
 app.use("/api/_admin/search/*", authMiddleware);
+// M7: ingest + runs + proposals + digest admin.
+app.use("/api/proposals", authMiddleware);
+app.use("/api/proposals/*", authMiddleware);
+app.use("/api/runs/*", authMiddleware);
+app.use("/api/_admin/digest/*", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -58,6 +67,12 @@ app.route("/api", adminCronRoute);
 app.route("/api", searchRoute);
 app.route("/api", askRoute);
 app.route("/api", adminSearchRoute);
+// M7: ingest + runs + proposals + digest routes. Same /api mount
+// pattern; each route file declares its own absolute paths.
+app.route("/api", ingestRoute);
+app.route("/api", runsRoute);
+app.route("/api", proposalsRoute);
+app.route("/api", digestRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),

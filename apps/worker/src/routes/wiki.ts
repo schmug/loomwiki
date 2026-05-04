@@ -16,27 +16,19 @@
 // owner can call them). All other routes are gated by workspace
 // membership (already enforced upstream by authMiddleware).
 
-import {
-  type WikiPageWriteRequest,
-  WikiPageWriteRequestSchema,
-  validateWikiPath,
-} from "@loomwiki/schema";
+import { WikiPageWriteRequestSchema, validateWikiPath } from "@loomwiki/schema";
 import { ErrorCodes, LoomwikiError, apiOk } from "@loomwiki/shared";
 import { Hono } from "hono";
-import type { Env } from "../env.js";
-import { removePageFromAiSearch, upsertPageInAiSearch } from "../lib/ai-search.js";
 import { mintVaultToken } from "../lib/artifacts.js";
-import { removePageFts5, upsertPageFts5 } from "../lib/fts5.js";
 import { bootstrapVault, defaultWikiBackend } from "../lib/vault-bootstrap.js";
-import { deserializePage, serializePage, validatePagePayload } from "../lib/wiki-content.js";
+import { deserializePage } from "../lib/wiki-content.js";
+import {
+  type WikiPagePayload,
+  syncIndexesOnDelete,
+  syncIndexesOnUpsert,
+  writePage,
+} from "../lib/wiki-write.js";
 import type { AuthEnv } from "../middleware/auth.js";
-
-interface WikiPagePayload {
-  path: string;
-  frontmatter: unknown;
-  body: string;
-  sha: string;
-}
 
 function pathFromRequest(c: { req: { path: string } }): string {
   // The route is mounted at /api/wiki, so c.req.path looks like
@@ -77,133 +69,6 @@ async function readPagePayload(
     body: parsed.body,
     sha: record.sha,
   };
-}
-
-async function writePage(
-  backend: ReturnType<typeof defaultWikiBackend>,
-  path: string,
-  request: WikiPageWriteRequest,
-): Promise<WikiPagePayload> {
-  // The request is either {frontmatter, body, before_sha?} (editor path)
-  // or {raw, before_sha?} (merge-dialog "Use this" path where the
-  // user is editing the on-disk YAML directly). Normalize to a validated
-  // {frontmatter, body} so the downstream write path is identical.
-  const validated = await normalizeWriteRequest(request);
-
-  const existing = await backend.read(path);
-
-  if (existing !== null) {
-    if (request.before_sha === undefined) {
-      // Create-only request hit an existing page. Treat as a 409 with
-      // the same merge-payload shape so the editor can show a merge
-      // dialog instead of clobbering.
-      throw conflictError(path, existing, validated);
-    }
-    if (existing.sha !== request.before_sha) {
-      throw conflictError(path, existing, validated);
-    }
-  } else if (request.before_sha !== undefined) {
-    // Caller thinks the page exists; it doesn't. Surface as 404 so
-    // the client can decide to retry as a create. (Treating as 409
-    // would be louder; 404 matches the GET shape and is clearer.)
-    throw new LoomwikiError(ErrorCodes.NOT_FOUND, "page not found", { status: 404 });
-  }
-
-  const serialized = await serializePage(validated.frontmatter, validated.body);
-  await backend.write({ path, raw: serialized.raw, sha: serialized.sha });
-
-  return {
-    path,
-    frontmatter: validated.frontmatter,
-    body: validated.body,
-    sha: serialized.sha,
-  };
-}
-
-async function normalizeWriteRequest(
-  request: WikiPageWriteRequest,
-): Promise<ReturnType<typeof validatePagePayload>> {
-  if ("raw" in request) {
-    const parsed = await deserializePage(request.raw);
-    return validatePagePayload({ frontmatter: parsed.frontmatter, body: parsed.body });
-  }
-  return validatePagePayload({ frontmatter: request.frontmatter, body: request.body });
-}
-
-// Index sync. The wiki backend (KV / Artifacts in M4.5) is the source
-// of truth for page content; the search indexes are derived views that
-// can lag without breaking correctness. We use Promise.allSettled so
-// one index failing (e.g. AI Search disabled in dev) never blocks the
-// other from succeeding, and neither failing reverts a successful
-// backend write/delete. Failures are logged and shrugged off — the
-// admin reindex route (M6) is the catch-up mechanism.
-async function syncIndexesOnUpsert(env: Env, payload: WikiPagePayload): Promise<void> {
-  const frontmatter = payload.frontmatter as { title: string; kind: string };
-  const settled = await Promise.allSettled([
-    upsertPageInAiSearch(env, {
-      path: payload.path,
-      frontmatter: {
-        title: frontmatter.title,
-        kind: frontmatter.kind as never,
-      },
-      body: payload.body,
-    }),
-    upsertPageFts5(env, {
-      path: payload.path,
-      title: frontmatter.title,
-      body: payload.body,
-    }),
-  ]);
-  for (const r of settled) {
-    if (r.status === "rejected") {
-      console.warn(`[wiki] index upsert failed for ${payload.path}: ${describeReason(r.reason)}`);
-    }
-  }
-}
-
-async function syncIndexesOnDelete(env: Env, path: string): Promise<void> {
-  const settled = await Promise.allSettled([
-    removePageFromAiSearch(env, path),
-    removePageFts5(env, path),
-  ]);
-  for (const r of settled) {
-    if (r.status === "rejected") {
-      console.warn(`[wiki] index delete failed for ${path}: ${describeReason(r.reason)}`);
-    }
-  }
-}
-
-function describeReason(reason: unknown): string {
-  if (reason instanceof Error) return reason.message;
-  return String(reason);
-}
-
-function conflictError(
-  path: string,
-  existing: { raw: string; sha: string },
-  attempted: { frontmatter: unknown; body: string },
-): LoomwikiError {
-  return new LoomwikiError(
-    ErrorCodes.CONFLICT,
-    "Wiki page changed since you loaded it; resolve via 3-way merge",
-    {
-      status: 409,
-      details: {
-        path,
-        // Give the client every fragment it needs to render the merge
-        // dialog: the SHA + raw text it's now competing with, plus
-        // what they tried to save. Base SHA = current SHA — the
-        // simplest 3-way merge for v0.0.1 (the editor renders a
-        // side-by-side picker, no algorithmic merge).
-        current_sha: existing.sha,
-        current_raw: existing.raw,
-        base_sha: existing.sha,
-        base_raw: existing.raw,
-        attempted_frontmatter: attempted.frontmatter,
-        attempted_body: attempted.body,
-      },
-    },
-  );
 }
 
 export const wikiRoute = new Hono<AuthEnv>()

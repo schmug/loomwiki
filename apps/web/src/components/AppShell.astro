@@ -19,6 +19,7 @@
 // has no JS dependency.
 
 import { AppShellHeader } from "@/components/AppShellHeader";
+import { InboxBadge } from "@/components/inbox/InboxBadge";
 
 interface Props {
   workspaceName: string;
@@ -30,7 +31,8 @@ const hasRightRail = Astro.slots.has("right-rail");
 const pathname = new URL(Astro.request.url).pathname;
 const onWiki = pathname.startsWith("/w");
 const onAsk = pathname.startsWith("/ask");
-const onChat = !onWiki && !onAsk;
+const onInbox = pathname.startsWith("/inbox");
+const onChat = !onWiki && !onAsk && !onInbox;
 ---
 
 <style>
@@ -90,6 +92,19 @@ const onChat = !onWiki && !onAsk;
           ]}
           aria-current={onAsk ? "page" : undefined}>Ask</a
         >
+        <a
+          href="/inbox"
+          class:list={[
+            "flex flex-1 items-center justify-center gap-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+            onInbox
+              ? "bg-background text-foreground"
+              : "text-muted-foreground hover:bg-background/60",
+          ]}
+          aria-current={onInbox ? "page" : undefined}
+        >
+          <span>Inbox</span>
+          <InboxBadge client:idle />
+        </a>
       </nav>
       <slot name="sidebar" />
     </aside>

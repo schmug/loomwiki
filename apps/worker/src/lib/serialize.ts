@@ -69,3 +69,65 @@ export function serializeRoom(r: Room): SerializedRoom {
     created_at: epochToIso(r.created_at),
   };
 }
+
+// ---------- M7: ingest runs + proposals ----------
+
+import type { IngestRunRow, ProposalRow } from "@loomwiki/schema/parsers";
+
+export interface SerializedIngestRun {
+  id: string;
+  room_id: string;
+  triggered_by: string;
+  started_at: string;
+  finished_at: string | null;
+  last_message_id: string | null;
+  status: "running" | "succeeded" | "failed";
+  summary: string | null;
+  error: string | null;
+}
+
+export function serializeIngestRun(r: IngestRunRow): SerializedIngestRun {
+  return {
+    id: r.id,
+    room_id: r.room_id,
+    triggered_by: r.triggered_by,
+    started_at: epochToIso(r.started_at),
+    finished_at: r.finished_at === null ? null : epochToIso(r.finished_at),
+    last_message_id: r.last_message_id,
+    status: r.status,
+    summary: r.summary,
+    error: r.error,
+  };
+}
+
+export interface SerializedProposal {
+  id: string;
+  run_id: string;
+  page_path: string;
+  action: "create" | "update";
+  before_sha: string | null;
+  after_content: string;
+  rationale: string;
+  status: "pending" | "merged" | "rejected" | "superseded";
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  artifacts_commit: string | null;
+}
+
+export function serializeProposal(p: ProposalRow): SerializedProposal {
+  return {
+    id: p.id,
+    run_id: p.run_id,
+    page_path: p.page_path,
+    action: p.action,
+    before_sha: p.before_sha,
+    after_content: p.after_content,
+    rationale: p.rationale,
+    status: p.status,
+    created_at: epochToIso(p.created_at),
+    reviewed_at: p.reviewed_at === null ? null : epochToIso(p.reviewed_at),
+    reviewed_by: p.reviewed_by,
+    artifacts_commit: p.artifacts_commit,
+  };
+}

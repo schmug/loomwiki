@@ -179,3 +179,69 @@ export interface RateLimitDetails {
   scope: "user" | "workspace";
   reset_at: string;
 }
+
+// ---------- Inbox / proposals (M7) ----------
+
+export type ProposalAction = "create" | "update";
+export type ProposalStatus = "pending" | "merged" | "rejected" | "superseded";
+export type IngestRunStatus = "running" | "succeeded" | "failed";
+
+export interface SerializedProposal {
+  id: string;
+  run_id: string;
+  page_path: string;
+  action: ProposalAction;
+  before_sha: string | null;
+  after_content: string;
+  rationale: string;
+  status: ProposalStatus;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  artifacts_commit: string | null;
+}
+
+export interface SerializedIngestRun {
+  id: string;
+  room_id: string;
+  triggered_by: string;
+  started_at: string;
+  finished_at: string | null;
+  last_message_id: string | null;
+  status: IngestRunStatus;
+  summary: string | null;
+  error: string | null;
+}
+
+export interface ProposalsListResponse {
+  proposals: SerializedProposal[];
+}
+
+export interface ProposalCountResponse {
+  status: ProposalStatus;
+  count: number;
+}
+
+export interface ProposalDetailResponse {
+  proposal: SerializedProposal;
+}
+
+export interface MergeProposalResponse {
+  merged: true;
+  page_path: string;
+  sha: string;
+}
+
+export interface RejectProposalResponse {
+  rejected: true;
+  proposal_id: string;
+}
+
+export interface TriggerIngestResponse {
+  run_id: string;
+  status: "running" | "lock_held";
+}
+
+export interface RunDetailResponse {
+  run: SerializedIngestRun;
+}

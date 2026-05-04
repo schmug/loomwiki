@@ -245,11 +245,14 @@ export const LlmUsageRowSchema = z.object({
   scope_id: LlmUsageScopeIdSchema,
   ask_count: z.number().int().nonnegative(),
   search_count: z.number().int().nonnegative(),
+  // M7: third counter alongside ask/search. Workspace-scoped reads only
+  // (cost-guard ignores the user-scoped column for ingest).
+  ingest_count: z.number().int().nonnegative(),
   updated_at: EpochSeconds,
 });
 export type LlmUsageRow = z.infer<typeof LlmUsageRowSchema>;
 
-export const LlmUsageKindSchema = z.enum(["ask", "search"]);
+export const LlmUsageKindSchema = z.enum(["ask", "search", "ingest"]);
 export type LlmUsageKind = z.infer<typeof LlmUsageKindSchema>;
 
 // ---------- Wiki search / ask responses (M6) ----------
@@ -320,7 +323,7 @@ export const SearchReindexResponseSchema = z.object({
 });
 export type SearchReindexResponse = z.infer<typeof SearchReindexResponseSchema>;
 
-// ---------- Proposals (M7 placeholder; M4 only stores the type) ----------
+// ---------- Ingest runs + Proposals (M7) ----------
 
 export const ProposalActionSchema = z.enum(["create", "update"]);
 export type ProposalAction = z.infer<typeof ProposalActionSchema>;
@@ -328,7 +331,10 @@ export type ProposalAction = z.infer<typeof ProposalActionSchema>;
 export const ProposalStatusSchema = z.enum(["pending", "merged", "rejected", "superseded"]);
 export type ProposalStatus = z.infer<typeof ProposalStatusSchema>;
 
-export const ProposalSchema = z.object({
+// 2× WIKI_BODY_MAX_BYTES gives the LLM a small overrun budget while
+// still rejecting truly oversize content; the agent validator fences
+// proposals to the strict 64 KB cap before persistence.
+export const ProposalRowSchema = z.object({
   id: Uuidv7Schema,
   run_id: Uuidv7Schema,
   page_path: z.string().regex(WIKI_PATH_REGEX, "must be a wiki page path"),
@@ -342,4 +348,72 @@ export const ProposalSchema = z.object({
   reviewed_by: Uuidv7Schema.nullable(),
   artifacts_commit: z.string().nullable(),
 });
-export type Proposal = z.infer<typeof ProposalSchema>;
+export type ProposalRow = z.infer<typeof ProposalRowSchema>;
+
+// Backwards-compatible alias for the M4-era name.
+export const ProposalSchema = ProposalRowSchema;
+export type Proposal = ProposalRow;
+
+export const IngestRunStatusSchema = z.enum(["running", "succeeded", "failed"]);
+export type IngestRunStatus = z.infer<typeof IngestRunStatusSchema>;
+
+// `triggered_by` is either a UUIDv7 (manual trigger by a workspace
+// member) or the literal string "cron" (scheduled run). Mirrors the
+// llm_usage_daily.scope_id pattern: a UUIDv7 cannot start with the
+// letter 'c' (UUIDv7 hex chars are 0-9 and a-f), so the union is
+// unambiguous.
+export const IngestRunTriggerSchema = z.union([Uuidv7Schema, z.literal("cron")]);
+export type IngestRunTrigger = z.infer<typeof IngestRunTriggerSchema>;
+
+export const IngestRunRowSchema = z.object({
+  id: Uuidv7Schema,
+  room_id: Uuidv7Schema,
+  triggered_by: IngestRunTriggerSchema,
+  started_at: EpochSeconds,
+  finished_at: EpochSeconds.nullable(),
+  // The bookmark — id of the newest message processed by this run.
+  // Subsequent runs read messages with id > last_message_id.
+  last_message_id: Uuidv7Schema.nullable(),
+  status: IngestRunStatusSchema,
+  summary: z.string().max(280).nullable(),
+  error: z.string().max(2000).nullable(),
+});
+export type IngestRunRow = z.infer<typeof IngestRunRowSchema>;
+
+// ---------- Ingest agent JSON-mode response ----------
+//
+// The agent is required to emit JSON matching this schema exactly. Any
+// deviation either fails Zod parsing (triggering retry) or — for the
+// fields whose constraints lift directly from vault-template/AGENTS.md
+// §5 — is rejected by the path/secret/source validators downstream.
+//
+// Sources are validated against the run's input message-id set; a
+// fabricated id rejects the proposal at validateProposals().
+
+const IngestProposalSourceSchema = z
+  .object({
+    room_id: Uuidv7Schema,
+    message_id: Uuidv7Schema,
+    excerpt: z.string().max(400).optional(),
+  })
+  .strict();
+export type IngestProposalSource = z.infer<typeof IngestProposalSourceSchema>;
+
+export const IngestProposalSchema = z
+  .object({
+    action: ProposalActionSchema,
+    page_path: z.string().regex(WIKI_PATH_REGEX, "must be a wiki page path"),
+    after_content: z.string().min(1).max(WIKI_BODY_MAX_BYTES),
+    rationale: z.string().min(1).max(1000),
+    sources: z.array(IngestProposalSourceSchema).min(1).max(20),
+  })
+  .strict();
+export type IngestProposal = z.infer<typeof IngestProposalSchema>;
+
+export const IngestAgentResponseSchema = z
+  .object({
+    summary: z.string().max(280),
+    proposals: z.array(IngestProposalSchema).max(20),
+  })
+  .strict();
+export type IngestAgentResponse = z.infer<typeof IngestAgentResponseSchema>;

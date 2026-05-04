@@ -50,6 +50,13 @@ export interface ChatOptions {
   temperature?: number;
   /** Token budget. Optional; same. */
   maxTokens?: number;
+  /**
+   * Output format hint. M7 uses "json_object" for the ingest agent's
+   * structured-output enforcement. Models that don't support the
+   * directive ignore it silently — callers must still parse defensively
+   * (the agent does this with retry-on-parse-fail).
+   */
+  responseFormat?: "text" | "json_object";
 }
 
 const DEFAULT_SYSTEM = "You are a helpful, concise assistant.";
@@ -106,6 +113,13 @@ interface WorkersAiRunBody {
   stream?: boolean;
   temperature?: number;
   max_tokens?: number;
+  /**
+   * Workers AI structured-output directive (M7). Honored by the
+   * llama-3.3-70b-instruct-fp8-fast catalog model; ignored by smaller
+   * fallback models. The ingest agent treats parse failures as
+   * "retry up to 2x" so a non-honoring model still works.
+   */
+  response_format?: { type: "json_object" };
 }
 
 function buildBody(opts: ChatOptions, stream: boolean): WorkersAiRunBody {
@@ -118,6 +132,9 @@ function buildBody(opts: ChatOptions, stream: boolean): WorkersAiRunBody {
   };
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
   if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+  if (opts.responseFormat === "json_object") {
+    body.response_format = { type: "json_object" };
+  }
   return body;
 }
 
