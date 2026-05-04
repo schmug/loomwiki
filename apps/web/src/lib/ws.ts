@@ -62,6 +62,12 @@ const DEFAULTS = {
   pongTimeoutMs: 10_000,
 } as const;
 
+// W3C WebSocket readyState constants. We reference these directly
+// instead of `WebSocket.CONNECTING / .OPEN / etc.` so the client works
+// in environments where `globalThis.WebSocket` is absent (Node, happy-dom
+// in tests). The fake-WS test seam already mirrors these numeric values.
+const WS_OPEN = 1;
+
 export class ChatClient {
   private readonly opts: Required<
     Omit<ChatClientOptions, "initialSinceMessageId" | "WebSocketCtor" | "setTimer" | "clearTimer">
@@ -87,8 +93,12 @@ export class ChatClient {
       url: options.url,
       initialSinceMessageId: options.initialSinceMessageId,
       WebSocketCtor: options.WebSocketCtor ?? globalThis.WebSocket,
-      setTimer: options.setTimer ?? setTimeout,
-      clearTimer: options.clearTimer ?? clearTimeout,
+      // Bind to globalThis so calling `this.opts.setTimer(...)` doesn't
+      // throw `TypeError: Illegal invocation` — the browser
+      // implementation of setTimeout / clearTimeout requires the global
+      // object as its `this`.
+      setTimer: options.setTimer ?? setTimeout.bind(globalThis),
+      clearTimer: options.clearTimer ?? clearTimeout.bind(globalThis),
       initialBackoffMs: options.initialBackoffMs ?? DEFAULTS.initialBackoffMs,
       maxBackoffMs: options.maxBackoffMs ?? DEFAULTS.maxBackoffMs,
       jitterFraction: options.jitterFraction ?? DEFAULTS.jitterFraction,
@@ -107,7 +117,7 @@ export class ChatClient {
 
   /** Idempotent. Opens a socket if one is not already open or opening. */
   connect(): void {
-    if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
+    if (this.socket && this.socket.readyState <= WS_OPEN) return;
     this.closedByUser = false;
     this.openSocket();
   }
@@ -160,7 +170,7 @@ export class ChatClient {
   }
 
   private flushQueue(): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    if (!this.socket || this.socket.readyState !== WS_OPEN) return;
     while (this.sendQueue.length > 0) {
       const head = this.sendQueue[0];
       if (!head) break;
@@ -271,7 +281,7 @@ export class ChatClient {
   }
 
   private sendPing(): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    if (!this.socket || this.socket.readyState !== WS_OPEN) return;
     try {
       this.socket.send(JSON.stringify({ kind: "ping" } satisfies ClientMsg));
     } catch (err) {

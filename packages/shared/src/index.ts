@@ -14,3 +14,4 @@ export {
   ServerMsgSchema,
   type ServerMsg,
 } from "./ws-protocol.js";
+export { renderMarkdown, defaultSanitizeSchema } from "./markdown-sanitize.js";

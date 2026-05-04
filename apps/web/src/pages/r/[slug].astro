@@ -1,0 +1,58 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Room view page. SSR-fetches /api/me, finds the room by slug from the
+// list (single source of truth — M1 memberships gate this), passes the
+// room id to RoomView (client:load).
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import { RoomView } from "@/components/chat/RoomView";
+import Layout from "@/layouts/Layout.astro";
+import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+
+const { slug } = Astro.params;
+if (!slug) return Astro.redirect("/");
+
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) {
+    return Astro.redirect("/login");
+  }
+  throw err;
+}
+
+const room = me.rooms.find((r) => r.slug === slug);
+---
+
+<Layout title={room ? `#${room.slug} — ${me.workspace.name}` : "Room not found"}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <RoomList
+      slot="sidebar"
+      client:idle
+      workspaceId={me.workspace.id}
+      rooms={me.rooms}
+    />
+    {
+      room ? (
+        <RoomView slot="main" client:load room={room} currentUser={me.user} />
+      ) : (
+        <div slot="main" class="grid h-full place-items-center p-8 text-center">
+          <div class="space-y-2">
+            <h1 class="text-xl font-semibold">Room not found</h1>
+            <p class="text-sm text-muted-foreground">
+              No room with slug <code>{slug}</code> in this workspace.
+            </p>
+            <p>
+              <a class="text-accent underline" href="/">
+                ← Back to home
+              </a>
+            </p>
+          </div>
+        </div>
+      )
+    }
+  </AppShell>
+</Layout>

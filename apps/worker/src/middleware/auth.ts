@@ -53,12 +53,20 @@ export const authMiddleware: MiddlewareHandler<AuthEnv> = async (c, next) => {
 
   let email: string | null = null;
 
+  // Local-dev fallback. The header path is the primary channel for
+  // browser-side fetch(). The query-param path covers WebSocket
+  // upgrades — the browser's WebSocket constructor cannot set custom
+  // headers, so the M3 web client appends `?devEmail=` to the WS URL.
+  // Both paths share the same triple-gate (NODE_ENV, ALLOW_LOCAL_DEV_AUTH,
+  // 127.0.0.1 / ::1).
   const localDevHeader = c.req.header("X-Local-Dev-Email");
-  if (localDevHeader && isLocalDevAuthAllowed(env, c.req.raw)) {
+  const localDevQuery = new URL(c.req.raw.url).searchParams.get("devEmail");
+  const localDevValue = localDevHeader ?? localDevQuery ?? null;
+  if (localDevValue && isLocalDevAuthAllowed(env, c.req.raw)) {
     warnLocalDevOnce();
-    email = localDevHeader.trim().toLowerCase();
+    email = localDevValue.trim().toLowerCase();
     if (!email) {
-      throw new LoomwikiError(ErrorCodes.AUTH_REQUIRED, "X-Local-Dev-Email header is empty", {
+      throw new LoomwikiError(ErrorCodes.AUTH_REQUIRED, "Local-dev email is empty", {
         status: 401,
       });
     }

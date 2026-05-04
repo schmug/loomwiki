@@ -1,0 +1,40 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Shared <html>/<head> chrome. CSP, meta tags, login-URL hint for the
+// client-side AuthRequiredError handler.
+
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  /** Optional Cloudflare Access login URL surfaced to the client. */
+  accessLoginUrl?: string;
+}
+
+const { title, accessLoginUrl } = Astro.props;
+
+// Theme persists in localStorage; this inline-script reads it before
+// React hydration so the dark class is applied before first paint and
+// avoids a flash of wrong theme. It is the ONLY inline script in the
+// app — CSP `script-src 'self'` blocks it, so we mark it `is:inline`
+// and rely on Astro's pre-rendered output. To make it CSP-clean we'd
+// need Astro 5.9+ experimental.csp with nonce injection (see PR
+// description, follow-up). For M3, the script lives at /theme-init.js
+// as a static asset so 'self' covers it.
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{title}</title>
+    {accessLoginUrl && (
+      <meta name="loomwiki-access-login-url" content={accessLoginUrl} />
+    )}
+    <script is:inline src="/theme-init.js"></script>
+  </head>
+  <body class="bg-background text-foreground">
+    <slot />
+  </body>
+</html>
