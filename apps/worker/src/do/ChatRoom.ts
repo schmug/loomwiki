@@ -223,16 +223,26 @@ export class ChatRoom extends DurableObject<Env> {
     attachment: WsAttachment,
     sinceMessageId: string | undefined,
   ): Promise<void> {
-    const recentMessages =
-      sinceMessageId !== undefined
-        ? getRecentSince(this.sql, attachment.roomId, sinceMessageId, WELCOME_MAX_RESUME)
-        : getRecent(this.sql, attachment.roomId, WELCOME_DEFAULT_RECENT);
+    let recentMessages: WireMessage[];
+    let hasMore: boolean;
+    if (sinceMessageId !== undefined) {
+      const page = getRecentSince(this.sql, attachment.roomId, sinceMessageId, WELCOME_MAX_RESUME);
+      recentMessages = page.messages;
+      hasMore = page.hasMore;
+    } else {
+      recentMessages = getRecent(this.sql, attachment.roomId, WELCOME_DEFAULT_RECENT);
+      // Fresh clients without a cursor get the most-recent N. If the room
+      // has more history beyond that, it's reachable via REST scrollback;
+      // we still flag it so UIs can show a "load older" affordance.
+      hasMore = recentMessages.length === WELCOME_DEFAULT_RECENT;
+    }
 
     sendServer(ws, {
       kind: "welcome",
       protocolVersion: PROTOCOL_VERSION,
       roomId: attachment.roomId,
       recentMessages,
+      hasMore,
     });
 
     if (recentMessages.length > 0) {

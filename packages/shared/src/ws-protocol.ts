@@ -114,6 +114,14 @@ const ServerWelcome = z.object({
   roomId: UuidV7,
   /** Messages the client has not yet seen. Capped at 200 to bound payload. */
   recentMessages: z.array(WireMessageSchema),
+  /**
+   * True if the resume cursor (`hello.sinceMessageId`) was set and there
+   * were strictly more than 200 missed messages — the welcome carries the
+   * oldest 200 and the client must fetch the gap via the REST scrollback
+   * route (`GET /api/rooms/:rid/messages?before=…`). Without this signal,
+   * a long-disconnected client would silently lose messages 201+.
+   */
+  hasMore: z.boolean(),
 });
 
 const ServerMessage = z.object({
