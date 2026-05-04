@@ -33,6 +33,12 @@ const KINDS: WikiPageKind[] = ["entity", "decision", "concept", "open-question",
 
 const SLUG_REGEX = /^[a-z][a-z0-9-]{0,59}$/;
 
+// Each path segment in the navigation target must be a known-safe
+// kebab-case-or-underscore identifier. Defense-in-depth alongside
+// SLUG_REGEX so any future change to the kind→folder map can't
+// smuggle uppercase / dots / encoded chars into the URL builder.
+const SAFE_PATH_SEGMENT = /^[a-z0-9_][a-z0-9_-]{0,59}$/;
+
 export interface NewPageDialogProps {
   existingPaths: string[];
   trigger: ReactNode;
@@ -76,12 +82,26 @@ export function NewPageDialog({ existingPaths, trigger }: NewPageDialogProps) {
       toast.error(`A page already exists at ${path}`);
       return;
     }
-    // Navigate to /w/ — the [...path] route will fetch and 404 → render
-    // the create-this-page CTA which immediately opens the editor.
-    const href = `/w${path.replace(/^\/wiki/, "").replace(/\.md$/, "")}?new=1&title=${encodeURIComponent(
-      title,
-    )}&kind=${kind}`;
-    window.location.href = href;
+    // Navigate to /w/<slug-path>?new=1&… — the [...path] route 404s
+    // and renders the create-this-page CTA, opening the editor with
+    // the seeded frontmatter. Build the URL through structured URL +
+    // URLSearchParams so user input flows through dedicated escapers
+    // (CodeQL js/xss-through-dom would otherwise see an inline string
+    // concat). The slug component is also independently validated by
+    // SLUG_REGEX above; we re-assert here as a defense-in-depth check.
+    const slugPath = path.replace(/^\/wiki/, "").replace(/\.md$/, "");
+    const slugSegments = slugPath.split("/").filter((s) => s.length > 0);
+    if (!slugSegments.every((s) => SAFE_PATH_SEGMENT.test(s))) {
+      toast.error("Slug path contains unsafe characters");
+      return;
+    }
+    const target = new URL(window.location.href);
+    target.pathname = `/w/${slugSegments.join("/")}`;
+    target.search = "";
+    target.searchParams.set("new", "1");
+    target.searchParams.set("title", title);
+    target.searchParams.set("kind", kind);
+    window.location.assign(target.pathname + target.search);
   }
 
   return (
