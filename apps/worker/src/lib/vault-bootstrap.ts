@@ -11,14 +11,14 @@
 // push the seed files into the git remote so `git clone` returns them.
 
 import { isVaultTopLevelPath, validateWikiPath } from "@loomwiki/schema";
+import type { Env } from "../env.js";
 import {
   VAULT_TEMPLATE_FILES,
   type VaultTemplateFile,
 } from "../generated/vault-template-manifest.js";
-import type { Env } from "../env.js";
 import { getOrCreateVaultRepo } from "./artifacts.js";
-import { serializePage, deserializePage } from "./wiki-content.js";
 import { KvWikiBackend, type WikiBackend } from "./wiki-backend.js";
+import { deserializePage, serializePage } from "./wiki-content.js";
 
 export interface BootstrapResult {
   /** Repo identifier the vault was created or fetched as. */

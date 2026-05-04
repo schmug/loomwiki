@@ -18,7 +18,7 @@
 //      *only* a script tag or a forbidden HTML block. An empty body
 //      (stub page) is allowed.
 
-import { type WikiPageFrontmatter, WIKI_BODY_MAX_BYTES } from "@loomwiki/schema";
+import { WIKI_BODY_MAX_BYTES, type WikiPageFrontmatter } from "@loomwiki/schema";
 import { parseWikiFrontmatter } from "@loomwiki/schema/parsers";
 import { ErrorCodes, LoomwikiError, renderMarkdown } from "@loomwiki/shared";
 import matter from "gray-matter";
@@ -154,8 +154,8 @@ async function sha256Hex(input: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", data);
   const bytes = new Uint8Array(buf);
   let out = "";
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i]!.toString(16).padStart(2, "0");
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, "0");
   }
   return out;
 }

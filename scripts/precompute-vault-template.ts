@@ -67,11 +67,7 @@ export interface VaultTemplateFile {
   content: string;
 }
 
-export const VAULT_TEMPLATE_FILES: readonly VaultTemplateFile[] = ${JSON.stringify(
-    files,
-    null,
-    2,
-  )};
+export const VAULT_TEMPLATE_FILES: readonly VaultTemplateFile[] = ${JSON.stringify(files, null, 2)};
 `;
   return header;
 }

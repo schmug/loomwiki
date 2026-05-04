@@ -5,11 +5,7 @@
 
 import { LoomwikiError } from "@loomwiki/shared";
 import { describe, expect, it } from "vitest";
-import {
-  deserializePage,
-  serializePage,
-  validatePagePayload,
-} from "../lib/wiki-content.js";
+import { deserializePage, serializePage, validatePagePayload } from "../lib/wiki-content.js";
 
 const VALID_FRONTMATTER = {
   title: "DMARC",
@@ -47,7 +43,8 @@ describe("serializePage / deserializePage", () => {
   });
 
   it("rejects frontmatter that violates the strict schema", async () => {
-    const bad = "---\ntitle: ok\nkind: bogus\ncreated: 2026-05-04\nlast_updated: 2026-05-04\nstatus: draft\n---\nbody";
+    const bad =
+      "---\ntitle: ok\nkind: bogus\ncreated: 2026-05-04\nlast_updated: 2026-05-04\nstatus: draft\n---\nbody";
     await expect(deserializePage(bad)).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
   });
 });

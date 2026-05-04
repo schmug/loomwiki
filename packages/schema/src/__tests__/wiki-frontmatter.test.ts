@@ -7,11 +7,7 @@
 
 import { LoomwikiError } from "@loomwiki/shared";
 import { describe, expect, it } from "vitest";
-import {
-  WikiPageFrontmatterSchema,
-  isVaultTopLevelPath,
-  validateWikiPath,
-} from "../index.js";
+import { WikiPageFrontmatterSchema, isVaultTopLevelPath, validateWikiPath } from "../index.js";
 import { parseWikiFrontmatter } from "../parsers.js";
 
 describe("validateWikiPath", () => {
@@ -88,9 +84,7 @@ describe("WikiPageFrontmatterSchema", () => {
   });
 
   it("rejects an extra top-level key (strict)", () => {
-    expect(() =>
-      WikiPageFrontmatterSchema.parse({ ...valid, made_up_field: 1 }),
-    ).toThrow();
+    expect(() => WikiPageFrontmatterSchema.parse({ ...valid, made_up_field: 1 })).toThrow();
   });
 
   it("rejects unknown kind", () => {

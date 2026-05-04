@@ -10,8 +10,8 @@
 // /wiki/** template files end up in the backend.
 
 import { describe, expect, it } from "vitest";
-import { InMemoryWikiBackend } from "../lib/wiki-backend.js";
 import { bootstrapVault } from "../lib/vault-bootstrap.js";
+import { InMemoryWikiBackend } from "../lib/wiki-backend.js";
 import { fakeEnv } from "./__fixtures__/fake-artifacts.js";
 
 describe("bootstrapVault", () => {

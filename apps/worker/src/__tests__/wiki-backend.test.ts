@@ -76,10 +76,6 @@ describe.each(cases)("$name conforms to WikiBackend contract", ({ make, cleanup 
     await backend.write({ path: "/wiki/b.md", raw: "b", sha: "1" });
     await backend.write({ path: "/wiki/a.md", raw: "a", sha: "1" });
     await backend.write({ path: "/wiki/concepts/c.md", raw: "c", sha: "1" });
-    expect(await backend.listPaths()).toEqual([
-      "/wiki/a.md",
-      "/wiki/b.md",
-      "/wiki/concepts/c.md",
-    ]);
+    expect(await backend.listPaths()).toEqual(["/wiki/a.md", "/wiki/b.md", "/wiki/concepts/c.md"]);
   });
 });
