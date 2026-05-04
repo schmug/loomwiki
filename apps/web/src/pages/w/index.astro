@@ -1,0 +1,80 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Wiki home. SSR-fetches /api/me + /api/wiki-tree + (best-effort)
+// /api/wiki/_index.md. If the index page exists, renders the
+// WikiViewer; otherwise shows the "Welcome to your wiki" CTA.
+
+import AppShell from "@/components/AppShell.astro";
+import { WikiTree } from "@/components/wiki/WikiTree";
+import { WikiViewer } from "@/components/wiki/WikiViewer";
+import Layout from "@/layouts/Layout.astro";
+import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload, WikiPagePayload, WikiTreeResponse } from "@/lib/types";
+
+let me: CurrentUserPayload;
+let tree: WikiTreeResponse;
+let indexPage: WikiPagePayload | null = null;
+
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+  tree = await ssrApiGet<WikiTreeResponse>(Astro.request, "/api/wiki-tree");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+try {
+  const data = await ssrApiGet<{ page: WikiPagePayload }>(Astro.request, "/api/wiki/_index.md");
+  indexPage = data.page;
+} catch (err) {
+  if (err instanceof SsrApiError && err.status === 404) {
+    indexPage = null;
+  } else if (!(err instanceof SsrAuthRequiredError)) {
+    throw err;
+  }
+}
+
+const isOwner = me.workspace.owner_id === me.user.id;
+---
+
+<Layout title={`Wiki — ${me.workspace.name}`}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <WikiTree
+      slot="sidebar"
+      client:idle
+      initialPaths={tree.paths}
+      currentPath="/wiki/_index.md"
+    />
+    {
+      indexPage ? (
+        <WikiViewer slot="main" client:load page={indexPage} canEdit={isOwner} />
+      ) : (
+        <div slot="main" class="grid h-full place-items-center p-8 text-center">
+          <div class="space-y-3 max-w-md">
+            <h1 class="text-2xl font-semibold">Welcome to your wiki</h1>
+            <p class="text-muted-foreground text-sm">
+              Your <code>/wiki/_index.md</code> is the workspace home page. The bootstrap routine
+              seeds it on first deploy.
+            </p>
+            {
+              isOwner ? (
+                <p class="text-sm">
+                  <a
+                    href="/w/_index"
+                    class="rounded-md bg-accent px-3 py-1.5 text-accent-foreground"
+                  >
+                    Create the index page
+                  </a>
+                </p>
+              ) : (
+                <p class="text-xs text-muted-foreground">
+                  Ask your workspace owner to run bootstrap or create the index page.
+                </p>
+              )
+            }
+          </div>
+        </div>
+      )
+    }
+  </AppShell>
+</Layout>

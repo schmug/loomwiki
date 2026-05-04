@@ -27,11 +27,18 @@ export class AuthRequiredError extends Error {
 export class ApiError extends Error {
   code: ErrorCode | string;
   status: number;
-  constructor(code: ErrorCode | string, message: string, status: number) {
+  /**
+   * Optional structured payload the worker attaches to typed errors —
+   * e.g. the merge payload on a 409 CONFLICT from PUT /api/wiki/*.
+   * Generic shape; specific helpers narrow before consuming.
+   */
+  details: unknown;
+  constructor(code: ErrorCode | string, message: string, status: number, details?: unknown) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -43,12 +50,12 @@ function readLoginUrlFromMeta(): string | null {
   return url && url.length > 0 ? url : null;
 }
 
-interface RequestInitJson extends Omit<RequestInit, "body" | "headers"> {
+export interface RequestInitJson extends Omit<RequestInit, "body" | "headers"> {
   body?: unknown;
   headers?: Record<string, string>;
 }
 
-async function request<T>(path: string, init: RequestInitJson = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInitJson = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...devHeaders(),
@@ -94,10 +101,12 @@ async function request<T>(path: string, init: RequestInitJson = {}): Promise<T> 
     );
   }
 
-  const result = body as ApiResult<T>;
+  const result = body as ApiResult<T> & {
+    error?: { code: string; message: string; details?: unknown };
+  };
   if (result && typeof result === "object" && "ok" in result) {
     if (result.ok) return result.data;
-    throw new ApiError(result.error.code, result.error.message, res.status);
+    throw new ApiError(result.error.code, result.error.message, res.status, result.error.details);
   }
 
   throw new ApiError(

@@ -51,3 +51,60 @@ export interface CreateRoomRequest {
   name: string;
   topic?: string;
 }
+
+// ---------- Wiki (M4) ----------
+
+export type WikiPageKind = "entity" | "decision" | "concept" | "open-question" | "glossary";
+
+export type WikiPageStatus = "draft" | "published" | "superseded";
+
+export interface WikiPageSource {
+  room: string;
+  message_id: string;
+  excerpt?: string;
+}
+
+export interface WikiPageFrontmatter {
+  title: string;
+  kind: WikiPageKind;
+  created: string; // ISO-8601 date or datetime
+  last_updated: string;
+  status: WikiPageStatus;
+  superseded_by?: string;
+  sources?: WikiPageSource[];
+}
+
+export interface WikiPagePayload {
+  path: string;
+  frontmatter: WikiPageFrontmatter;
+  body: string;
+  sha: string;
+}
+
+export interface WikiPageReadResponse {
+  page: WikiPagePayload;
+}
+
+export interface WikiPageWriteRequest {
+  frontmatter: WikiPageFrontmatter;
+  body: string;
+  before_sha?: string;
+}
+
+export interface WikiTreeResponse {
+  paths: string[];
+}
+
+/**
+ * Shape of the `error.details` field on a 409 CONFLICT from PUT
+ * /api/wiki/*. The MergeDialog renders against this exactly.
+ */
+export interface WikiConflictDetails {
+  path: string;
+  current_sha: string;
+  current_raw: string;
+  base_sha: string;
+  base_raw: string;
+  attempted_frontmatter: WikiPageFrontmatter;
+  attempted_body: string;
+}

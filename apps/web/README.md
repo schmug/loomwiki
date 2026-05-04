@@ -61,9 +61,10 @@ component decides how it ships:
 | Surface | Directive | Why | Example |
 |---|---|---|---|
 | Active room view | `client:load` | WS opens immediately on page interactive — anything later is added latency on every room visit | [src/pages/r/[slug].astro](src/pages/r/[slug].astro) → `<RoomView client:load … />` |
-| Sidebar nav, theme toggle, header | `client:load` for header (theme toggle wired pre-paint), `client:idle` for the sidebar (not on the latency hot path) | Idle waits for `requestIdleCallback` so the chat surface gets first dibs | [src/pages/index.astro](src/pages/index.astro) → `<RoomList client:idle … />` |
+| Wiki viewer + editor | `client:load` | The Edit button toggles to the editor in-place; Milkdown / textarea need state in user's hands without a hydration delay | [src/pages/w/[...path].astro](src/pages/w/[...path].astro) → `<WikiViewer client:load … />` |
+| Sidebar nav, theme toggle, header | `client:load` for header (theme toggle wired pre-paint), `client:idle` for the sidebar | Idle waits for `requestIdleCallback` so the active surface gets first dibs | [src/pages/index.astro](src/pages/index.astro) → `<RoomList client:idle … />` and `<WikiTree client:idle … />` |
 | Page chrome, layout markup, server-fetched data shell | (no directive — server-rendered) | Saves JS payload, plays nice with SSR + Cloudflare adapter | [src/components/AppShell.astro](src/components/AppShell.astro) |
-| Below-the-fold widgets | `client:visible` | Wait for IntersectionObserver | (none in M3; M4 wiki TOC may use it) |
+| Below-the-fold widgets | `client:visible` | Wait for IntersectionObserver | (none yet) |
 
 **Radix UI context does NOT cross the .astro / .jsx boundary.** Astro
 SSR renders each React component in isolation; nesting
@@ -72,6 +73,47 @@ be used within Avatar". When a Radix primitive uses a Provider /
 Context, compose its tree inside a single React component (see
 `src/components/DesignSamples.tsx` and the chat components for
 examples).
+
+## Wiki
+
+The wiki surface (M4) lives at `/w` and `/w/<path>`. Three React
+components compose the experience, all designed to live inside one
+React tree to honor the M3 Radix-context constraint:
+
+- [`WikiTree`](src/components/wiki/WikiTree.tsx) — sidebar, hierarchical
+  page listing. Hydrates `client:idle`. Auto-expands the current
+  page's ancestors. Refetches on window focus.
+- [`WikiViewer`](src/components/wiki/WikiViewer.tsx) — read-only render
+  of the page. Sanitized markdown via `@loomwiki/shared`'s
+  `renderMarkdown`. The Edit button toggles to:
+- [`WikiEditor`](src/components/wiki/WikiEditor.tsx) — split-pane editor
+  (textarea on the left, live preview on the right). Saves via
+  `PUT /api/wiki/*` carrying `before_sha`. On 409 → opens
+  [`MergeDialog`](src/components/wiki/MergeDialog.tsx).
+
+**Editor note**: v0.0.1 uses a textarea + live preview rather than the
+Milkdown WYSIWYG editor. The Milkdown deps (`@milkdown/core`,
+`@milkdown/react`, etc.) are installed; the swap to Milkdown is tracked
+as M4.5 follow-up. The textarea route covers every editing primitive
+the M4 prompt asks for (bold, italic, code, headings, lists, quote,
+link) and round-trips through the same sanitizer pipeline.
+
+**Wikilinks**: `[[page-name]]` syntax renders as plain code-fenced text
+(no link) in v0.0.1 — they become resolvable links in v0.1 once a
+`remark` plugin lands that knows about the wiki tree.
+
+**Conflict resolution**: optimistic locking via SHA-256 of the on-disk
+page bytes. Each read returns the SHA; each write submits
+`before_sha`. On mismatch the worker returns a 409 with a typed
+`details` payload (`current_sha`, `current_raw`, `base_sha`,
+`base_raw`, `attempted_*`). The client surfaces a side-by-side picker;
+v0.0.1 does not algorithmically merge.
+
+**Persistence**: pages live in the `WIKI_KV` namespace in v0.0.1 (see
+[ADR-0003](../../docs/ADR/0003-artifacts-as-vault.md)). M4.5 swaps the
+KV backend for git-backed Artifacts persistence using the
+`/_admin/wiki/vault-token` route to clone/push. The vault repo is
+created lazily on first request via `env.ARTIFACTS.create()`.
 
 ## Markdown sanitization
 

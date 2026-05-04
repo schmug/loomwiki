@@ -19,7 +19,7 @@ export function registerErrorHandler(app: Hono<AuthEnv> | Hono<{ Bindings: Env }
         message: err.message,
         status: err.status,
       });
-      return c.json(apiErr(err.code, err.message), err.status as ContentfulStatusCode);
+      return c.json(apiErr(err.code, err.message, err.details), err.status as ContentfulStatusCode);
     }
     console.error("[loomwiki] unhandled error", err);
     return c.json(apiErr(ErrorCodes.INTERNAL_ERROR, "Internal server error"), 500);
