@@ -7,13 +7,15 @@
 // Routes call these on every read so schema drift surfaces loudly instead of
 // causing silent bad data downstream.
 
-import { LoomwikiError } from "@loomwiki/shared";
+import { ErrorCodes, LoomwikiError } from "@loomwiki/shared";
 import type { infer as ZodInfer, ZodTypeAny } from "zod";
 import {
   MessageRowSchema,
   RoomMemberRowSchema,
   RoomRowSchema,
   UserRowSchema,
+  type WikiPageFrontmatter,
+  WikiPageFrontmatterSchema,
   WorkspaceRowSchema,
 } from "./index.js";
 
@@ -35,11 +37,35 @@ export const parseRoomMemberRow = (row: unknown) =>
   parseRow(RoomMemberRowSchema, row, "room_members");
 export const parseMessageRow = (row: unknown) => parseRow(MessageRowSchema, row, "messages");
 
+/**
+ * Parse a Zod-validated wiki frontmatter object. Caller hands in an
+ * already-decoded YAML object (gray-matter handles YAML → JS); this
+ * function validates the shape against the strict Zod schema and
+ * raises a typed LoomwikiError on failure so the route layer can map
+ * to a 400 with `code: VALIDATION_FAILED`.
+ */
+export function parseWikiFrontmatter(value: unknown): WikiPageFrontmatter {
+  const result = WikiPageFrontmatterSchema.safeParse(value);
+  if (!result.success) {
+    throw new LoomwikiError(ErrorCodes.VALIDATION_FAILED, "Invalid wiki page frontmatter", {
+      status: 400,
+      details: result.error.issues,
+    });
+  }
+  return result.data;
+}
+
 export type {
   Message,
+  Proposal,
   Room,
   RoomMember,
   RoomMemberRole,
   User,
+  WikiPageFrontmatter,
+  WikiPageKind,
+  WikiPageSource,
+  WikiPageStatus,
+  WikiPageWriteRequest,
   Workspace,
 } from "./index.js";
