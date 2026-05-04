@@ -139,21 +139,21 @@ describe("WikiSearchResultSchema", () => {
 
 describe("WikiSearchResponseSchema", () => {
   it("accepts an empty hybrid response", () => {
-    expect(
-      WikiSearchResponseSchema.parse({ results: [], mode: "hybrid" }),
-    ).toEqual({ results: [], mode: "hybrid" });
+    expect(WikiSearchResponseSchema.parse({ results: [], mode: "hybrid" })).toEqual({
+      results: [],
+      mode: "hybrid",
+    });
   });
 
   it("accepts the fts5 fallback mode", () => {
-    expect(
-      WikiSearchResponseSchema.parse({ results: [], mode: "fts5_fallback" }),
-    ).toEqual({ results: [], mode: "fts5_fallback" });
+    expect(WikiSearchResponseSchema.parse({ results: [], mode: "fts5_fallback" })).toEqual({
+      results: [],
+      mode: "fts5_fallback",
+    });
   });
 
   it("rejects an unknown mode", () => {
-    expect(
-      WikiSearchResponseSchema.safeParse({ results: [], mode: "bm25" }).success,
-    ).toBe(false);
+    expect(WikiSearchResponseSchema.safeParse({ results: [], mode: "bm25" }).success).toBe(false);
   });
 });
 

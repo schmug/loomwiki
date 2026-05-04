@@ -20,7 +20,7 @@
 // → `recordUsage`). A client disconnect mid-stream does NOT roll back
 // the counter — the cost has already been incurred at the LLM provider.
 
-import { type LlmUsageKind } from "@loomwiki/schema";
+import type { LlmUsageKind } from "@loomwiki/schema";
 import { ErrorCodes, LoomwikiError } from "@loomwiki/shared";
 import type { Env } from "../env.js";
 import { type Clock, getUsage, incrementUsage, nextUtcMidnightIso } from "./usage.js";

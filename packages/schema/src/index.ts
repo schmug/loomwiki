@@ -236,9 +236,7 @@ export type LlmUsageScopeType = z.infer<typeof LlmUsageScopeTypeSchema>;
 export const LlmUsageScopeIdSchema = z.union([Uuidv7Schema, z.literal("_workspace")]);
 export type LlmUsageScopeId = z.infer<typeof LlmUsageScopeIdSchema>;
 
-const LlmUsageDaySchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "must be a YYYY-MM-DD date");
+const LlmUsageDaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a YYYY-MM-DD date");
 
 export const LlmUsageRowSchema = z.object({
   workspace_id: Uuidv7Schema,

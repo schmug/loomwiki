@@ -18,11 +18,7 @@ import type { Env } from "../env.js";
 
 export type ByokProvider = "anthropic" | "openai" | "google";
 
-const KNOWN_PROVIDERS: ReadonlySet<ByokProvider> = new Set([
-  "anthropic",
-  "openai",
-  "google",
-]);
+const KNOWN_PROVIDERS: ReadonlySet<ByokProvider> = new Set(["anthropic", "openai", "google"]);
 
 export function isKnownByokProvider(value: unknown): value is ByokProvider {
   return typeof value === "string" && KNOWN_PROVIDERS.has(value as ByokProvider);

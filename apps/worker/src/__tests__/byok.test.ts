@@ -48,7 +48,13 @@ describe("getBYOK (M6 null contract)", () => {
     await env.DB.prepare(
       "INSERT INTO byok_keys (workspace_id, provider, ciphertext, iv, created_by) VALUES (?, ?, ?, ?, ?)",
     )
-      .bind(DEFAULT_WORKSPACE_ID, "anthropic", new Uint8Array([1, 2, 3]), new Uint8Array([4]), user.id)
+      .bind(
+        DEFAULT_WORKSPACE_ID,
+        "anthropic",
+        new Uint8Array([1, 2, 3]),
+        new Uint8Array([4]),
+        user.id,
+      )
       .run();
 
     const key = await getBYOK(env, DEFAULT_WORKSPACE_ID, "anthropic");

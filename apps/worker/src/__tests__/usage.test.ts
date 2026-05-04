@@ -4,7 +4,6 @@
 
 import { env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getOrCreateUser } from "../lib/users.js";
 import {
   getUsage,
   incrementUsage,
@@ -12,6 +11,7 @@ import {
   resetUsageToday,
   utcDayKey,
 } from "../lib/usage.js";
+import { getOrCreateUser } from "../lib/users.js";
 import { DEFAULT_WORKSPACE_ID, getOrBootstrapWorkspace } from "../lib/workspace.js";
 import { applyMigrations, resetDb } from "./__fixtures__/db.js";
 

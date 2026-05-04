@@ -70,16 +70,18 @@ export interface WikiChunk {
  * all-non-alphanumeric heading.
  */
 export function slugifyHeading(heading: string): string {
-  return heading
-    .normalize("NFKD")
-    // biome-ignore lint/suspicious/noMisleadingCharacterClass: stripping combining marks is intentional
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+  return (
+    heading
+      .normalize("NFKD")
+      // biome-ignore lint/suspicious/noMisleadingCharacterClass: stripping combining marks is intentional
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+  );
 }
 
 // Bodies are extracted verbatim from the raw markdown source (between

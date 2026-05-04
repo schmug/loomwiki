@@ -90,7 +90,10 @@ describe("chunkPageBySection", () => {
   it("inherits H1 ancestor across multiple H2 siblings", () => {
     const md = "# Top\n\n## L\n\nleft\n\n## R\n\nright\n";
     const out = chunkPageBySection(md, INPUT);
-    expect(out.map((c) => c.sectionPath)).toEqual([["Top", "L"], ["Top", "R"]]);
+    expect(out.map((c) => c.sectionPath)).toEqual([
+      ["Top", "L"],
+      ["Top", "R"],
+    ]);
   });
 
   it("preserves frontmatter-context fields verbatim on every chunk", () => {
@@ -114,7 +117,10 @@ describe("chunkPageBySection", () => {
   });
 
   it("chunks a long page into several bodies", () => {
-    const sections = Array.from({ length: 8 }, (_, i) => `## Section ${i}\n\nBody of section ${i}.`);
+    const sections = Array.from(
+      { length: 8 },
+      (_, i) => `## Section ${i}\n\nBody of section ${i}.`,
+    );
     const out = chunkPageBySection(sections.join("\n\n"), INPUT);
     expect(out).toHaveLength(8);
     for (let i = 0; i < 8; i += 1) {

@@ -37,7 +37,8 @@ export const parseRoomRow = (row: unknown) => parseRow(RoomRowSchema, row, "room
 export const parseRoomMemberRow = (row: unknown) =>
   parseRow(RoomMemberRowSchema, row, "room_members");
 export const parseMessageRow = (row: unknown) => parseRow(MessageRowSchema, row, "messages");
-export const parseLlmUsageRow = (row: unknown) => parseRow(LlmUsageRowSchema, row, "llm_usage_daily");
+export const parseLlmUsageRow = (row: unknown) =>
+  parseRow(LlmUsageRowSchema, row, "llm_usage_daily");
 
 /**
  * Parse a Zod-validated wiki frontmatter object. Caller hands in an

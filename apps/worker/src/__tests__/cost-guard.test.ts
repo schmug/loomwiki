@@ -6,12 +6,12 @@
 // between users.
 
 import { env } from "cloudflare:test";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { isLoomwikiError } from "@loomwiki/shared";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../env.js";
 import { assertWithinLimit, readLimits } from "../lib/cost-guard.js";
-import { getOrCreateUser } from "../lib/users.js";
 import { getUsage } from "../lib/usage.js";
+import { getOrCreateUser } from "../lib/users.js";
 import { DEFAULT_WORKSPACE_ID, getOrBootstrapWorkspace } from "../lib/workspace.js";
 import { applyMigrations, resetDb } from "./__fixtures__/db.js";
 
@@ -32,12 +32,14 @@ async function bootstrap() {
 
 // Build an Env with the given numeric limits without mutating the
 // shared workerd env (which would leak across tests).
-function envWithLimits(overrides: Partial<{
-  user_ask: number;
-  user_search: number;
-  ws_ask: number;
-  ws_search: number;
-}>): Env {
+function envWithLimits(
+  overrides: Partial<{
+    user_ask: number;
+    user_search: number;
+    ws_ask: number;
+    ws_search: number;
+  }>,
+): Env {
   return {
     ...env,
     LLM_DAILY_LIMIT_PER_USER_ASK: String(overrides.user_ask ?? 1000),
@@ -70,12 +72,27 @@ describe("assertWithinLimit", () => {
     const { userA } = await bootstrap();
     const e = envWithLimits({ user_ask: 2, ws_ask: 1000 });
 
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
 
     let caught: unknown = null;
     try {
-      await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
+      await assertWithinLimit({
+        env: e,
+        workspaceId: DEFAULT_WORKSPACE_ID,
+        userId: userA,
+        kind: "ask",
+      });
     } catch (err) {
       caught = err;
     }
@@ -98,13 +115,33 @@ describe("assertWithinLimit", () => {
     // users hits workspace ceiling first.
     const e = envWithLimits({ user_ask: 1000, ws_ask: 3 });
 
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userB, kind: "ask" });
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userB,
+      kind: "ask",
+    });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
 
     let caught: unknown = null;
     try {
-      await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userB, kind: "ask" });
+      await assertWithinLimit({
+        env: e,
+        workspaceId: DEFAULT_WORKSPACE_ID,
+        userId: userB,
+        kind: "ask",
+      });
     } catch (err) {
       caught = err;
     }
@@ -117,13 +154,23 @@ describe("assertWithinLimit", () => {
     const { userA, userB } = await bootstrap();
     const e = envWithLimits({ user_ask: 1, ws_ask: 1000 });
 
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
     await expect(
       assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" }),
     ).rejects.toThrow();
 
     // userB still has fresh counter — should succeed.
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userB, kind: "ask" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userB,
+      kind: "ask",
+    });
 
     expect(
       (
@@ -140,20 +187,35 @@ describe("assertWithinLimit", () => {
     const { userA } = await bootstrap();
     const e = envWithLimits({ user_ask: 1, user_search: 100 });
 
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
     await expect(
       assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" }),
     ).rejects.toThrow();
 
     // Search is fine despite ask being capped.
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "search" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "search",
+    });
   });
 
   it("on success, increments BOTH the per-user and per-workspace counter", async () => {
     const { userA } = await bootstrap();
     const e = envWithLimits({ user_ask: 100, ws_ask: 100 });
 
-    await assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
 
     expect(
       (

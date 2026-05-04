@@ -17,9 +17,10 @@ interface RunCall {
   body: unknown;
 }
 
-function fakeAi(
-  handler: (model: string, body: unknown) => Promise<unknown> | unknown,
-): { calls: RunCall[]; binding: Env["AI"] } {
+function fakeAi(handler: (model: string, body: unknown) => Promise<unknown> | unknown): {
+  calls: RunCall[];
+  binding: Env["AI"];
+} {
   const calls: RunCall[] = [];
   return {
     calls,

@@ -211,13 +211,12 @@ export async function* chatStream(opts: ChatOptions): AsyncIterable<ChatStreamCh
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       // Process complete SSE events (separated by blank lines).
-      let split: number;
-      while ((split = buffer.indexOf("\n\n")) !== -1) {
+      while (true) {
+        const split = buffer.indexOf("\n\n");
+        if (split === -1) break;
         const event = buffer.slice(0, split);
         buffer = buffer.slice(split + 2);
-        const dataLine = event
-          .split("\n")
-          .find((l) => l.startsWith("data:"));
+        const dataLine = event.split("\n").find((l) => l.startsWith("data:"));
         if (!dataLine) continue;
         const payload = dataLine.slice(5).trim();
         if (payload === "[DONE]" || payload.length === 0) continue;

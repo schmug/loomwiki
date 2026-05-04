@@ -15,7 +15,7 @@
 // inject a fake clock to exercise rollover; production passes
 // `Date.now()` (the default).
 
-import { type LlmUsageKind, type LlmUsageScopeType } from "@loomwiki/schema";
+import type { LlmUsageKind, LlmUsageScopeType } from "@loomwiki/schema";
 import type { Env } from "../env.js";
 
 export type Clock = () => number;
