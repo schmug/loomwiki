@@ -88,6 +88,19 @@ function resolveRoute(opts: ChatOptions): ResolvedRoute {
   return { gatewayUrl: null, model, byokProvider: "workers_ai" };
 }
 
+// Guard against the env.AI binding being absent (e.g. local-dev configs
+// that omit it because Wrangler refuses to start `wrangler dev` for
+// remote-only bindings without a login). Without this, downstream code
+// fails with the inscrutable `Cannot read properties of undefined
+// (reading 'run')` mid-stream.
+function requireAiBinding(opts: ChatOptions): void {
+  if (!opts.env.AI || typeof opts.env.AI.run !== "function") {
+    throw new Error(
+      "llm: env.AI binding is not available. Configure AI_GATEWAY_ID + CF_ACCOUNT_ID, or run with `wrangler dev --remote --config wrangler.jsonc`. (See DEPLOY.md §AI Search + /ask + cost guards.)",
+    );
+  }
+}
+
 interface WorkersAiRunBody {
   messages: { role: "system" | "user"; content: string }[];
   stream?: boolean;
@@ -119,6 +132,7 @@ async function maybeBYOK(opts: ChatOptions): Promise<string | null> {
 /** Non-streaming chat completion. Returns the full text. */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const route = resolveRoute(opts);
+  if (route.gatewayUrl === null) requireAiBinding(opts);
   const byok = await maybeBYOK(opts);
   if (byok === null) warnDevModelOnce();
 
@@ -169,6 +183,7 @@ export interface ChatStreamChunk {
  */
 export async function* chatStream(opts: ChatOptions): AsyncIterable<ChatStreamChunk> {
   const route = resolveRoute(opts);
+  if (route.gatewayUrl === null) requireAiBinding(opts);
   const byok = await maybeBYOK(opts);
   if (byok === null) warnDevModelOnce();
 

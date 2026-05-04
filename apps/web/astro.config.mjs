@@ -15,7 +15,13 @@ const WORKER_DEV_URL = "http://127.0.0.1:8788";
 export default defineConfig({
   output: "server",
   adapter: cloudflare({
-    platformProxy: { enabled: true },
+    // Point the platform proxy at wrangler.dev.jsonc so it doesn't try
+    // to remote-proxy the AI / Artifacts / AI Search bindings (those are
+    // remote-only and require `wrangler login`). The dev config omits
+    // them; tests use typed fakes; live AI requires `wrangler dev
+    // --remote --config ../../wrangler.jsonc` from an authenticated
+    // shell.
+    platformProxy: { enabled: true, configPath: "../../wrangler.dev.jsonc" },
   }),
   integrations: [react()],
   server: { port: 4321 },

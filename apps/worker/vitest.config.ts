@@ -12,11 +12,15 @@ export default defineConfig(async () => {
   return {
     plugins: [
       cloudflareTest({
-        wrangler: { configPath: "../../wrangler.jsonc" },
-        // Run tests fully offline. Without this the AI binding (which only
-        // has a remote implementation) forces wrangler into remote mode and
-        // CI fails with "You must be logged in to use wrangler dev in remote
-        // mode."
+        // Point at wrangler.dev.jsonc so the remote-only bindings
+        // (Artifacts, AI Search) are absent rather than "declared but
+        // unreachable". Tests that need fakes for those bindings inject
+        // them via env-override (see __fixtures__/fake-artifacts.ts and
+        // __fixtures__/fake-ai-search.ts). Mirrors the M5 precedent.
+        wrangler: { configPath: "../../wrangler.dev.jsonc" },
+        // Defense-in-depth: even pointing at wrangler.dev.jsonc, force
+        // remote bindings off so a future binding addition can't quietly
+        // re-introduce remote mode.
         remoteBindings: false,
         miniflare: {
           // Expose the migration array as a binding so tests can call

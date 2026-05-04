@@ -43,7 +43,15 @@
   ],
   "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "loomwiki-attachments" }],
   "kv_namespaces": [{ "binding": "CACHE", "id": "<TBD>" }, { "binding": "WIKI_KV", "id": "<TBD>" }],
-  "ai": { "binding": "AI" },
+  // M6: AI + AI_SEARCH bindings are intentionally OMITTED here. wrangler 4
+  // refuses to start `wrangler dev` for accounts that aren't logged in
+  // when remote-only bindings are declared, even when the rest of the
+  // config is local-only. Tests inject typed fakes (see __fixtures__/
+  // fake-ai-search.ts and the llm.test.ts AI-binding fixture). Live /ask
+  // and AI-Search-backed search require `wrangler dev --remote
+  // --config ../../wrangler.jsonc` against an authenticated account.
+  // Local FTS5 fallback works without these bindings (auto-detect in
+  // lib/search.ts).
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "WORKSPACE_NAME": "default",

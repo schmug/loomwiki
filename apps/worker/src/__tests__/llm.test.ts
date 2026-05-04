@@ -113,6 +113,34 @@ describe("chat (non-streaming)", () => {
     }
   });
 
+  it("throws a clear error when env.AI is missing AND no gateway is configured", async () => {
+    const e = envOverride({ AI: undefined as unknown as Env["AI"], AI_GATEWAY_ID: "" });
+    await expect(chat({ env: e, prompt: "hi" })).rejects.toThrow(
+      /env\.AI binding is not available/,
+    );
+  });
+
+  it("does NOT require env.AI when the gateway is configured (gateway path doesn't touch the binding)", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ result: { response: "via gateway" } }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const original = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+    try {
+      const e = envOverride({
+        AI: undefined as unknown as Env["AI"],
+        AI_GATEWAY_ID: "g",
+        CF_ACCOUNT_ID: "a",
+      });
+      const result = await chat({ env: e, prompt: "hi" });
+      expect(result.text).toBe("via gateway");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("invokes BYOK lookup when workspaceId is provided (M6 returns null but path runs)", async () => {
     const ai = fakeAi(async () => ({ response: "ok" }));
     const e = envOverride({ AI: ai.binding, AI_GATEWAY_ID: "" });
