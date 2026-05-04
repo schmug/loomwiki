@@ -464,7 +464,15 @@ export function sanitizeMessageBody(raw: string): string {
   s = s.replace(ZERO_WIDTH_OR_BIDI, "");
   // 3. Strip raw HTML tags. M14's full sanitizer is the renderer's job;
   //    here we just keep tags out of the LLM context entirely.
-  s = s.replace(/<[^>]*>/g, "");
+  //    Loop until the result is stable so nested patterns like
+  //    `<scr<script>ipt>` (where one pass leaves `<script>`) are caught.
+  //    Bound at 8 iterations — pathological inputs that don't converge
+  //    are unlikely in chat content but the cap prevents any worst case.
+  for (let i = 0; i < 8; i++) {
+    const next = s.replace(/<[^>]*>/g, "");
+    if (next === s) break;
+    s = next;
+  }
   // 4. Strip control characters (except \n and \t).
   s = s.replace(CONTROL_CHARS, "");
   s = s.trim();

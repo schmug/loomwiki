@@ -110,6 +110,19 @@ describe("sanitizeMessageBody (defense layer 1)", () => {
     expect(sanitizeMessageBody("<b>bold</b>")).toBe("bold");
   });
 
+  it("strips nested tag fragments a single pass would leave behind (CodeQL js/incomplete-multi-character-sanitization)", () => {
+    // Single-pass strip of `<script>` produces `<script>` from this
+    // input — the loop in sanitizeMessageBody catches it. The
+    // security concern is reconstructed `<...>` tags; a lone `>`
+    // character is harmless text. Assert no `<` survives.
+    const out1 = sanitizeMessageBody("<scr<script>ipt>alert(1)</scr</script>ipt>");
+    expect(out1).not.toContain("<");
+    expect(out1).not.toMatch(/<[a-z]/i);
+    // Sandwich-nested tags also collapse.
+    const out2 = sanitizeMessageBody("<<i>b<i></i>>x<</i>/b>");
+    expect(out2).not.toContain("<");
+  });
+
   it("strips zero-width characters", () => {
     // ZWSP between letters: result is still readable but the ZWSP is gone.
     const raw = "pwn​ed";
