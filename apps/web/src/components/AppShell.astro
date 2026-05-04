@@ -1,0 +1,70 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+
+// Server-rendered three-column shell. The header is a React island
+// (theme toggle + mobile menu); the sidebar + main + right-rail slots
+// take Astro children, which lets each surface choose its own
+// hydration directive (client:idle for the room list, client:load for
+// the active room view).
+//
+// Mobile-sidebar visibility is driven by `<html data-sidebar-open>` —
+// AppShellHeader sets the attribute, this CSS reacts to it. Stays
+// server-rendered + a single inline-style block so the chrome itself
+// has no JS dependency.
+
+import { AppShellHeader } from "@/components/AppShellHeader";
+
+interface Props {
+  workspaceName: string;
+  userDisplayName: string;
+}
+
+const { workspaceName, userDisplayName } = Astro.props;
+const hasRightRail = Astro.slots.has("right-rail");
+---
+
+<style>
+  /* Mobile: hide sidebar by default; reveal when AppShellHeader marks
+     the html element open. md+ always visible via Tailwind in markup. */
+  @media (max-width: 767px) {
+    [data-sidebar-open="true"] aside[data-app-sidebar] {
+      display: block;
+    }
+    [data-sidebar-open="false"] aside[data-app-sidebar] {
+      display: none;
+    }
+  }
+</style>
+
+<div class="flex h-dvh flex-col bg-background text-foreground">
+  <AppShellHeader
+    client:load
+    workspaceName={workspaceName}
+    userDisplayName={userDisplayName}
+  />
+
+  <div class="flex min-h-0 flex-1">
+    <aside
+      data-app-sidebar
+      aria-label="Sidebar"
+      class="hidden w-64 shrink-0 border-r border-border bg-secondary md:block"
+    >
+      <slot name="sidebar" />
+    </aside>
+
+    <main class="min-h-0 flex-1 overflow-hidden bg-background">
+      <slot name="main" />
+    </main>
+
+    {
+      hasRightRail && (
+        <aside
+          aria-label="Context"
+          class="hidden w-72 shrink-0 border-l border-border bg-background lg:block"
+        >
+          <slot name="right-rail" />
+        </aside>
+      )
+    }
+  </div>
+</div>

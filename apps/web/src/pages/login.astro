@@ -1,0 +1,38 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Landing page for unauthenticated users. The Cloudflare Access flow
+// itself is opaque to the app — Access intercepts the upgrade to the
+// app domain. This page is the "you got bounced because Access wasn't
+// satisfied" surface; clicking the button kicks the Access redirect
+// chain.
+
+import Layout from "@/layouts/Layout.astro";
+---
+
+<Layout title="Sign in — Loomwiki">
+  <main class="grid min-h-dvh place-items-center bg-background p-6 text-foreground">
+    <div class="w-full max-w-md space-y-6 rounded-lg border border-border bg-background p-8 shadow-sm">
+      <header class="space-y-1 text-center">
+        <div class="mx-auto flex size-10 items-center justify-center rounded-full bg-accent/10">
+          <span class="size-3 rounded-full bg-accent" aria-hidden="true"></span>
+        </div>
+        <h1 class="text-2xl font-semibold">Loomwiki</h1>
+        <p class="text-sm text-muted-foreground">
+          Chat is the input. A git-backed wiki is the output.
+        </p>
+      </header>
+
+      <div class="space-y-3">
+        <a
+          href="/"
+          class="flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          Sign in with Cloudflare Access
+        </a>
+        <p class="text-center text-xs text-muted-foreground">
+          You&rsquo;ll be redirected to your team&rsquo;s identity provider.
+        </p>
+      </div>
+    </div>
+  </main>
+</Layout>

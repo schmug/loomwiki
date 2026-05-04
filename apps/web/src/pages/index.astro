@@ -1,27 +1,45 @@
 ---
 // SPDX-License-Identifier: Apache-2.0
-// Real UI lands in M3. This page exists in M0 only to prove the Astro +
-// Cloudflare adapter pipeline boots end-to-end.
+// Workspace home. Server-fetches /api/me. If signed in, mounts the
+// AppShell with RoomList and an empty-state main pane. If 401,
+// redirects to login.
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import Layout from "@/layouts/Layout.astro";
+import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) {
+    return Astro.redirect("/login");
+  }
+  throw err;
+}
 ---
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width" />
-    <title>Loomwiki — under construction</title>
-    <style>
-      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-      main { max-width: 32rem; padding: 2rem; line-height: 1.5; }
-      h1 { font-size: 1.75rem; margin: 0 0 0.5rem; }
-      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Loomwiki</h1>
-      <p>Pre-alpha. Real UI ships in M3.</p>
-      <p>API health check: <code>GET /api/health</code></p>
-    </main>
-  </body>
-</html>
+
+<Layout title={`Loomwiki — ${me.workspace.name}`}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <RoomList
+      slot="sidebar"
+      client:idle
+      workspaceId={me.workspace.id}
+      rooms={me.rooms}
+    />
+    <div slot="main" class="grid h-full place-items-center p-8 text-center">
+      <div class="space-y-3">
+        <h1 class="text-2xl font-semibold">Welcome to {me.workspace.name}</h1>
+        <p class="text-muted-foreground">
+          {
+            me.rooms.length === 0
+              ? "No rooms yet. Create one from the sidebar to get started."
+              : "Pick a room from the sidebar to start chatting."
+          }
+        </p>
+      </div>
+    </div>
+  </AppShell>
+</Layout>
