@@ -1,0 +1,215 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/*
+ * Tailwind v4 entry. CSS-first config — there is no tailwind.config.js.
+ *
+ * Palette: warm stone neutrals + a single amber accent. Dark mode flips by
+ * adding `class="dark"` on <html> (see ThemeToggle.tsx). shadcn-style
+ * components consume the semantic vars (--background, --foreground, etc.);
+ * primitives that need a raw scale step (e.g. `bg-stone-50`) consume the
+ * `--color-*` scale exposed by Tailwind v4 directly.
+ */
+
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Font stacks — system fonts only in v0.0.1 (no webfont fetch). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
+  --radius: 0.5rem;
+}
+
+/*
+ * Semantic CSS variables consumed by the shadcn-style primitives.
+ * Light theme on :root, dark theme on .dark. Hex values (not oklch) for
+ * broader tooling compatibility; the warm stone/amber palette below is
+ * sourced from Tailwind's `stone-*` and `amber-*` scales.
+ */
+@layer base {
+  :root {
+    --background: #fafaf9; /* stone-50 */
+    --foreground: #1c1917; /* stone-900 */
+    --card: #ffffff;
+    --card-foreground: #1c1917;
+    --popover: #ffffff;
+    --popover-foreground: #1c1917;
+    --primary: #1c1917; /* stone-900 — buttons, primary CTA */
+    --primary-foreground: #fafaf9;
+    --secondary: #f5f5f4; /* stone-100 */
+    --secondary-foreground: #292524; /* stone-800 */
+    --muted: #f5f5f4;
+    --muted-foreground: #78716c; /* stone-500 */
+    --accent: #fbbf24; /* amber-400 — single accent */
+    --accent-foreground: #1c1917;
+    --destructive: #dc2626; /* red-600 */
+    --destructive-foreground: #fafaf9;
+    --border: #e7e5e4; /* stone-200 */
+    --input: #e7e5e4;
+    --ring: #f59e0b; /* amber-500 — focus rings */
+  }
+
+  .dark {
+    --background: #1c1917; /* stone-900 */
+    --foreground: #f5f5f4; /* stone-100 */
+    --card: #292524; /* stone-800 */
+    --card-foreground: #f5f5f4;
+    --popover: #292524;
+    --popover-foreground: #f5f5f4;
+    --primary: #f5f5f4;
+    --primary-foreground: #1c1917;
+    --secondary: #292524; /* stone-800 */
+    --secondary-foreground: #f5f5f4;
+    --muted: #292524;
+    --muted-foreground: #a8a29e; /* stone-400 */
+    --accent: #fbbf24; /* amber-400 — same in dark */
+    --accent-foreground: #1c1917;
+    --destructive: #ef4444; /* red-500 */
+    --destructive-foreground: #fafaf9;
+    --border: #44403c; /* stone-700 */
+    --input: #44403c;
+    --ring: #fbbf24; /* amber-400 — focus rings */
+  }
+}
+
+/*
+ * Re-expose the semantic vars to Tailwind v4 so utilities like
+ * `bg-background`, `text-muted-foreground`, `border-border`, `ring-ring`
+ * resolve correctly. v4's @theme reads CSS variables here at build time.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light dark;
+    font-family: var(--font-sans);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    min-height: 100vh;
+  }
+
+  /*
+   * Focus-visible ring. Per resolved decisions: amber-500 at 50% opacity.
+   */
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ring) 50%, transparent);
+    outline-offset: 2px;
+  }
+
+  /*
+   * Sanitized markdown body styling. Chat bubbles render markdown via
+   * @loomwiki/shared's renderMarkdown (rehype-sanitize). The .md scope
+   * keeps these styles from leaking onto shadcn components.
+   */
+  .md h1,
+  .md h2,
+  .md h3 {
+    font-weight: 600;
+    margin: 0.5em 0 0.25em;
+    line-height: 1.25;
+  }
+  .md h1 {
+    font-size: 1.25rem;
+  }
+  .md h2 {
+    font-size: 1.125rem;
+  }
+  .md h3 {
+    font-size: 1rem;
+  }
+  .md p {
+    margin: 0.25em 0;
+  }
+  .md a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .md a:hover {
+    text-decoration-thickness: 2px;
+  }
+  .md code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    padding: 0.1em 0.3em;
+    border-radius: 0.25rem;
+    background-color: var(--muted);
+  }
+  .md pre {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    background-color: var(--muted);
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+  .md pre code {
+    padding: 0;
+    background: transparent;
+  }
+  .md ul,
+  .md ol {
+    margin: 0.25em 0;
+    padding-left: 1.5em;
+  }
+  .md ul {
+    list-style: disc;
+  }
+  .md ol {
+    list-style: decimal;
+  }
+  .md blockquote {
+    border-left: 3px solid var(--border);
+    padding-left: 0.75em;
+    color: var(--muted-foreground);
+    margin: 0.5em 0;
+  }
+  .md table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 0.9em;
+  }
+  .md th,
+  .md td {
+    border: 1px solid var(--border);
+    padding: 0.25em 0.5em;
+  }
+  .md hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 0.75em 0;
+  }
+}

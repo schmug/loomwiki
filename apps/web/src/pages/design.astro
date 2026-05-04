@@ -1,0 +1,42 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Substrate smoke page. Renders one of every M3 primitive in both light
+// and dark scopes side-by-side so a reviewer can eyeball the warm
+// stone/amber palette in one glance. Not linked from production routes.
+//
+// Astro renders each React component in isolation during SSR — Radix
+// context (e.g. Avatar/AvatarFallback) does NOT cross the .astro/.jsx
+// boundary. Compose context-bearing primitives inside a single React
+// component (DesignSamples.tsx), then mount that here.
+
+import "../styles/global.css";
+import { DesignSamples } from "@/components/DesignSamples";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Loomwiki — Design substrate</title>
+  </head>
+  <body>
+    <main class="mx-auto max-w-6xl space-y-6 p-8">
+      <header class="space-y-1">
+        <h1 class="text-2xl font-semibold">Loomwiki design substrate</h1>
+        <p class="text-sm text-muted-foreground">
+          Tailwind v4 + shadcn primitives. Warm stone neutrals + single amber accent.
+        </p>
+      </header>
+      <hr class="border-border" />
+      <div class="grid gap-6 md:grid-cols-2">
+        <div>
+          <DesignSamples mode="light" />
+        </div>
+        <div class="dark">
+          <DesignSamples mode="dark" />
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
