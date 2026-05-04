@@ -24,6 +24,6 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as { ok: boolean; error?: { code: string } };
     expect(body.ok).toBe(false);
-    expect(body.error?.code).toBe("not_found");
+    expect(body.error?.code).toBe("NOT_FOUND");
   });
 });
