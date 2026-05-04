@@ -75,14 +75,17 @@ const ClientSend = z.object({
   kind: z.literal("send"),
   /** Client-generated dedup token, echoed back in `ack` for optimistic UI. */
   tempId: z.string().min(1).max(64),
-  body: z.string().min(1).max(MAX_BODY_CHARS),
+  // Body length is enforced server-side in the DO so the rejection envelope
+  // can echo `tempId`; schema-level bound here is just min(1) to keep
+  // parsing robust against clients that send slightly oversized payloads.
+  body: z.string().min(1),
   parentId: UuidV7.optional(),
 });
 
 const ClientEdit = z.object({
   kind: z.literal("edit"),
   messageId: UuidV7,
-  body: z.string().min(1).max(MAX_BODY_CHARS),
+  body: z.string().min(1),
 });
 
 const ClientDelete = z.object({
