@@ -14,4 +14,9 @@ export {
   ServerMsgSchema,
   type ServerMsg,
 } from "./ws-protocol.js";
-export { renderMarkdown, defaultSanitizeSchema } from "./markdown-sanitize.js";
+export {
+  renderMarkdown,
+  defaultSanitizeSchema,
+  createMarkdownAstParser,
+} from "./markdown-sanitize.js";
+export { chunkPageBySection, slugifyHeading, type WikiChunk } from "./markdown-chunk.js";
