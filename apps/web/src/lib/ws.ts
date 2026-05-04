@@ -240,7 +240,7 @@ export class ChatClient {
     }
 
     if (parsed.kind === "pong") {
-      this.cancelPongDeadline();
+      this.handlePong();
       // Don't surface pong to listeners — it's heartbeat plumbing.
       return;
     }
@@ -308,7 +308,19 @@ export class ChatClient {
       this.opts.clearTimer(this.pongDeadlineTimer);
       this.pongDeadlineTimer = null;
     }
-    // After receiving a pong, queue the next ping.
+  }
+
+  /**
+   * Pong received: clear the deadline timer and schedule the next ping.
+   * Split from `cancelPongDeadline` so socket-close paths can clean up the
+   * pong timer without spuriously scheduling another ping on a dead socket
+   * (every reconnect would otherwise leak a timer ref).
+   */
+  private handlePong(): void {
+    this.cancelPongDeadline();
+    if (this.pingTimer) {
+      this.opts.clearTimer(this.pingTimer);
+    }
     this.pingTimer = this.opts.setTimer(() => this.sendPing(), this.opts.pingIntervalMs);
   }
 

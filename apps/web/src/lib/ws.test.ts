@@ -150,6 +150,7 @@ describe("ChatClient — happy path", () => {
       protocolVersion: PROTOCOL_VERSION,
       roomId: "0190b0a4-7b2e-7eee-8aaa-cccccccccccc",
       recentMessages: [],
+      hasMore: false,
     });
     ws.simulateMessage({
       kind: "message",
@@ -255,6 +256,25 @@ describe("ChatClient — heartbeat & reconnect", () => {
     expect(ws.readyState).toBe(READY.OPEN);
     vi.advanceTimersByTime(600);
     expect(ws.readyState).toBe(READY.CLOSED);
+  });
+
+  it("does not leak ping timers across reconnect (regression: pong cleanup re-scheduled ping on dead socket)", () => {
+    const client = newClient({ pingIntervalMs: 1000, pongTimeoutMs: 500 });
+    client.connect();
+    const ws = lastInstance();
+    ws.simulateOpen();
+
+    // Force a server-initiated close. Before the fix, cancelPingTimers ran
+    // cancelPongDeadline which re-scheduled a ping timer on the now-dead
+    // socket — leaking on every reconnect.
+    ws.simulateClose();
+
+    // Advance past several ping intervals while the reconnect timer is
+    // pending. No spurious ping should fire on the closed socket; sent[]
+    // on the dead socket stays empty after the simulateClose snapshot.
+    const sentBeforeReconnect = ws.sent.length;
+    vi.advanceTimersByTime(5000);
+    expect(ws.sent.length).toBe(sentBeforeReconnect);
   });
 
   it("does NOT reconnect after `client.close()`", () => {

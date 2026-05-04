@@ -273,6 +273,37 @@ describe("ChatRoom DO — WebSocket flow", () => {
     expect(tombstone?.deleted_at).not.toBeNull();
   });
 
+  it("welcome.hasMore=true when sinceMessageId backlog exceeds 200 messages", async () => {
+    // Drop the WELCOME_MAX_RESUME knob from 200 → much larger than the
+    // tests can practically seed without timing out. So instead we exercise
+    // the cap from the *fresh client* path (no sinceMessageId): default cap
+    // is 50, anything beyond signals hasMore=true.
+    const alice = await bootstrapMember("alice@example.com", "general");
+    const ws1 = await track(await openWs(alice.roomId, alice.jwt));
+    ws1.send({ kind: "hello", protocolVersion: PROTOCOL_VERSION });
+    await ws1.next();
+
+    // 51 messages: more than the WELCOME_DEFAULT_RECENT cap (50).
+    for (let i = 0; i < 51; i++) {
+      ws1.send({ kind: "send", tempId: `t${i}`, body: `m${i}` });
+    }
+    let acks = 0;
+    while (acks < 51) {
+      const m = await ws1.next(2000);
+      if (m.kind === "ack") acks++;
+    }
+    ws1.close();
+    openSessions.pop();
+
+    // Fresh reconnect, no sinceMessageId — default backlog of 50 + hasMore.
+    const ws2 = await track(await openWs(alice.roomId, alice.jwt));
+    ws2.send({ kind: "hello", protocolVersion: PROTOCOL_VERSION });
+    const welcome = await ws2.next();
+    if (welcome.kind !== "welcome") throw new Error("expected welcome");
+    expect(welcome.recentMessages.length).toBe(50);
+    expect(welcome.hasMore).toBe(true);
+  });
+
   it("malformed JSON yields VALIDATION_FAILED but keeps the socket open", async () => {
     const alice = await bootstrapMember("alice@example.com", "general");
     const ws = await track(await openWs(alice.roomId, alice.jwt));

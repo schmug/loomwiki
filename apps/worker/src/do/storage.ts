@@ -131,21 +131,30 @@ export function getRecent(sql: SqlStorage, roomId: string, limit: number): WireM
 /**
  * Messages strictly after `sinceMessageId`. UUIDv7's lexicographic-time-order
  * makes the cursor work without consulting `created_at`.
+ *
+ * Returns at most `limit` rows; sets `hasMore=true` if there were strictly
+ * more than that, so the welcome envelope can signal the client to fetch
+ * the gap via the REST scrollback route. Without this signal, a long-
+ * disconnected client whose backlog exceeds the cap silently drops the
+ * older slice of missed messages.
  */
 export function getRecentSince(
   sql: SqlStorage,
   roomId: string,
   sinceMessageId: string,
   limit: number,
-): WireMessage[] {
+): { messages: WireMessage[]; hasMore: boolean } {
+  // Fetch limit+1 to detect overflow without a second query.
   const cursor = sql.exec<LocalRow>(
     "SELECT * FROM messages_local WHERE id > ? ORDER BY id ASC LIMIT ?",
     sinceMessageId,
-    limit,
+    limit + 1,
   );
   const rows: WireMessage[] = [];
   for (const row of cursor) rows.push(rowToWire(row, roomId));
-  return rows;
+  const hasMore = rows.length > limit;
+  if (hasMore) rows.length = limit;
+  return { messages: rows, hasMore };
 }
 
 export function applyEdit(
