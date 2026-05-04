@@ -93,8 +93,12 @@ export class ChatClient {
       url: options.url,
       initialSinceMessageId: options.initialSinceMessageId,
       WebSocketCtor: options.WebSocketCtor ?? globalThis.WebSocket,
-      setTimer: options.setTimer ?? setTimeout,
-      clearTimer: options.clearTimer ?? clearTimeout,
+      // Bind to globalThis so calling `this.opts.setTimer(...)` doesn't
+      // throw `TypeError: Illegal invocation` — the browser
+      // implementation of setTimeout / clearTimeout requires the global
+      // object as its `this`.
+      setTimer: options.setTimer ?? setTimeout.bind(globalThis),
+      clearTimer: options.clearTimer ?? clearTimeout.bind(globalThis),
       initialBackoffMs: options.initialBackoffMs ?? DEFAULTS.initialBackoffMs,
       maxBackoffMs: options.maxBackoffMs ?? DEFAULTS.maxBackoffMs,
       jitterFraction: options.jitterFraction ?? DEFAULTS.jitterFraction,

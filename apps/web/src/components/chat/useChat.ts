@@ -19,6 +19,7 @@
 //   - URL routing — the page chrome owns it.
 
 import { apiGet } from "@/lib/api";
+import { devEmailIfSet } from "@/lib/dev";
 import { ChatClient, type ChatClientEvent } from "@/lib/ws";
 import { type ServerMsg, type WireMessage, id as makeId } from "@loomwiki/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -76,9 +77,16 @@ export interface UseChatResult {
 const ACK_TIMEOUT_MS = 5_000;
 
 function defaultWsUrl(roomId: string): string {
-  if (typeof location === "undefined") return `/api/rooms/${roomId}/ws`;
+  // Browsers can't set custom headers on WebSocket connections, so the
+  // local-dev email travels via query string instead. The worker
+  // auth middleware reads it (still triple-gated). In production
+  // PUBLIC_LOOMWIKI_DEV_EMAIL is unset and Cloudflare Access cookies
+  // gate the upgrade.
+  const dev = devEmailIfSet();
+  const query = dev ? `?devEmail=${encodeURIComponent(dev)}` : "";
+  if (typeof location === "undefined") return `/api/rooms/${roomId}/ws${query}`;
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/api/rooms/${roomId}/ws`;
+  return `${proto}//${location.host}/api/rooms/${roomId}/ws${query}`;
 }
 
 async function defaultLoadOlder(
