@@ -97,6 +97,11 @@ function mapMatch(match: AiSearchMatch): WikiSearchResult | null {
   // since "concept" is permissive on the editor side.
   const safeKind = isKnownKind(kind) ? kind : "concept";
   const snippet = (match.content ?? "").slice(0, SNIPPET_MAX_CHARS);
+  // Surface the chunk's heading so /ask citations can build
+  // /w/<path>#<slug>. Empty-string headings are treated as null (the
+  // upserter writes `heading: chunk.heading ?? undefined`, so an empty
+  // string would be a misconfigured indexer; coerce defensively).
+  const heading = typeof md.heading === "string" && md.heading.length > 0 ? md.heading : null;
   return {
     path,
     title,
@@ -104,6 +109,7 @@ function mapMatch(match: AiSearchMatch): WikiSearchResult | null {
     snippet,
     score: match.score,
     source: "ai_search",
+    heading,
   };
 }
 

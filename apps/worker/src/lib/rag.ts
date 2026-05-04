@@ -118,18 +118,15 @@ function buildCitations(results: WikiSearchResult[]): AskCitation[] {
   return out;
 }
 
-// AI Search snippets sometimes embed the heading text as the first
-// line; FTS5 snippets are body-only. We don't have a clean cross-source
-// heading carrier today, so heading_slug is null for both sources in
-// v0.0.1 — best-effort slug derivation can land in M7 alongside the
-// IngestAgent, which has the structured chunk in hand. The
-// `slugifyHeading` import stays here so the v0.0.1 → v0.1 transition is
-// a one-line change.
-function deriveHeadingSlug(_result: WikiSearchResult): string | null {
-  // Reserved for v0.1: when AI Search results gain a `heading` field
-  // surfaced through this layer, return slugifyHeading(heading).
-  void slugifyHeading;
-  return null;
+// Heading slug derivation. AI Search results carry the matched
+// chunk's H1/H2 heading on `result.heading` (populated from chunk
+// metadata by lib/ai-search.ts); FTS5 results don't (the index is
+// row-per-page). The web citation pill builds /w/<path>#<slug> only
+// when this returns non-null.
+function deriveHeadingSlug(result: WikiSearchResult): string | null {
+  if (typeof result.heading !== "string" || result.heading.length === 0) return null;
+  const slug = slugifyHeading(result.heading);
+  return slug.length > 0 ? slug : null;
 }
 
 async function* singleMessageStream(message: string): AsyncIterable<string> {

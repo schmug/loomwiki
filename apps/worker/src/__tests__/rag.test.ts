@@ -146,6 +146,34 @@ describe("askWithRag — happy path", () => {
     expect(messages?.[1]?.content).toMatch(/## Context/);
   });
 
+  it("derives heading_slug from AI Search match metadata heading field", async () => {
+    const ai = fakeAiBinding(["x"]);
+    const fakeSearch = new FakeAiSearchBinding();
+    await fakeSearch.upsert([
+      {
+        id: "/wiki/dmarc.md#1",
+        content: "Aggregate (rua) reports cover one day of mail.",
+        metadata: {
+          path: "/wiki/dmarc.md",
+          title: "DMARC",
+          kind: "concept",
+          heading: "Reporting Modes",
+          section_path: ["DMARC", "Reporting Modes"],
+        },
+      },
+    ]);
+    const e = envWithFakeAiSearch(env as Env, fakeSearch, {
+      AI: ai.binding,
+      AI_GATEWAY_ID: "",
+      AI_SEARCH_ENABLED: "true",
+    });
+
+    const res = await askWithRag({ env: e, question: "rua reports", topK: 5 });
+    await collect(res.stream); // drain
+    expect(res.citations).toHaveLength(1);
+    expect(res.citations[0]?.heading_slug).toBe("reporting-modes");
+  });
+
   it("truncates per-chunk context to 2000 chars before sending to the LLM", async () => {
     const ai = fakeAiBinding(["ok"]);
     const big = "X".repeat(5000);

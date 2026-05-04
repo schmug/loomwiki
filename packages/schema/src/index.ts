@@ -270,6 +270,11 @@ export const WikiSearchResultSchema = z.object({
   // so callers can sort descending in either mode.
   score: z.number(),
   source: WikiSearchSourceSchema,
+  // The H1/H2 heading the matching chunk fell under, if any. AI Search
+  // populates this from the chunk metadata; FTS5 leaves it null because
+  // the index is row-per-page (no per-section granularity). The web
+  // citation pill builds /w/<path>#<slugifyHeading(heading)> when set.
+  heading: z.string().min(1).max(200).nullable().optional(),
 });
 export type WikiSearchResult = z.infer<typeof WikiSearchResultSchema>;
 
