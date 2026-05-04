@@ -13,7 +13,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "loomwiki-api",
   "main": "apps/worker/src/index.ts",
-  "compatibility_date": "2026-04-15",
+  "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "routes": [
@@ -34,8 +34,24 @@
     }
   ],
   "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "loomwiki-attachments" }],
-  "kv_namespaces": [{ "binding": "CACHE", "id": "<TBD>" }],
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "<TBD>" },
+    // Wiki page storage for v0.0.1. The vault is fronted by Cloudflare
+    // Artifacts (binding `ARTIFACTS` below) for repo lifecycle, but the
+    // Artifacts Workers binding currently exposes only repo-level methods
+    // (create/get/listToken/createToken). File-level read/write/commit
+    // happen via the Git protocol against repo.remote in a follow-up
+    // milestone (M4.5). For now, wiki content is durably persisted in this
+    // KV namespace, keyed by `wiki:<path>`. See docs/ADR/0003.
+    { "binding": "WIKI_KV", "id": "<TBD>" }
+  ],
   "ai": { "binding": "AI" },
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "default"
+    }
+  ],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "WORKSPACE_NAME": "default",

@@ -92,3 +92,157 @@ export const CreateRoomRequestSchema = z.object({
   topic: z.string().max(2000).optional(),
 });
 export type CreateRoomRequest = z.infer<typeof CreateRoomRequestSchema>;
+
+// ---------- Wiki (M4) ----------
+
+// Wiki page paths under the vault. Mirrors vault-template/AGENTS.md §7
+// slug rules but widens the leading-character class to allow `_` so
+// system files like /wiki/_index.md and /wiki/_open-questions.md fit.
+//
+// Anchored, ASCII-only, no traversal sequences, no uppercase. The body
+// alphabet allows `_` and `-`, plus `/` for nested directories.
+export const WIKI_PATH_REGEX = /^\/wiki\/[a-z0-9_][a-z0-9_/-]*\.md$/;
+
+// Top-level vault files that bootstrap may write outside `/wiki/`. These
+// are read-only via the wiki API in M4 (admin-only edit lands in M8).
+const VAULT_TOP_LEVEL_ALLOWLIST = new Set(["/AGENTS.md", "/README.md"]);
+
+/**
+ * Returns `true` if `path` is a valid wiki page path under `/wiki/`.
+ * Rejects `..`, uppercase, leading dot (but not leading underscore),
+ * trailing slashes, double slashes, and non-`.md` extensions.
+ */
+export function validateWikiPath(path: string): boolean {
+  if (typeof path !== "string" || path.length === 0 || path.length > 256) return false;
+  if (path.includes("..")) return false;
+  if (path.includes("//")) return false;
+  return WIKI_PATH_REGEX.test(path);
+}
+
+/**
+ * Returns `true` if `path` is a top-level vault file that the bootstrap
+ * routine may write (`/AGENTS.md`, `/README.md`). Used by the bootstrap
+ * code path only — the wiki HTTP API never accepts these.
+ */
+export function isVaultTopLevelPath(path: string): boolean {
+  return VAULT_TOP_LEVEL_ALLOWLIST.has(path);
+}
+
+export const WikiPageKindSchema = z.enum([
+  "entity",
+  "decision",
+  "concept",
+  "open-question",
+  "glossary",
+]);
+export type WikiPageKind = z.infer<typeof WikiPageKindSchema>;
+
+export const WikiPageStatusSchema = z.enum(["draft", "published", "superseded"]);
+export type WikiPageStatus = z.infer<typeof WikiPageStatusSchema>;
+
+// ISO-8601 date or datetime string (YYYY-MM-DD or full RFC 3339).
+// Shape via regex; calendar validity (month/day in range) via refine — a
+// loose regex would let "2026-13-99" through, which we want to reject so
+// the editor catches typos before they hit the vault.
+const ISO_DATE_LIKE_REGEX =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/;
+const IsoDateLikeSchema = z
+  .string()
+  .min(8)
+  .max(40)
+  .regex(ISO_DATE_LIKE_REGEX, "must be an ISO-8601 date or datetime")
+  .refine(
+    (s) => {
+      const datePart = s.slice(0, 10);
+      const d = new Date(`${datePart}T00:00:00Z`);
+      if (Number.isNaN(d.getTime())) return false;
+      // Reject calendar overflow (e.g. 2026-02-31 → March 3 in JS).
+      return d.toISOString().slice(0, 10) === datePart;
+    },
+    { message: "calendar date must be valid" },
+  );
+
+export const WikiPageSourceSchema = z
+  .object({
+    room: z.string().min(1).max(120),
+    message_id: z.string().min(1).max(64),
+    excerpt: z.string().max(400).optional(),
+  })
+  .strict();
+export type WikiPageSource = z.infer<typeof WikiPageSourceSchema>;
+
+/**
+ * Frontmatter required on every wiki page. Strict shape — extra
+ * top-level keys are rejected so vault content stays in lockstep with
+ * what the ingest agent (M7) writes.
+ *
+ * `superseded_by` is only meaningful when `status === "superseded"`
+ * but the schema does not enforce that pairing — the M7 ingest agent
+ * is the source of truth for that invariant; M4 just stores what the
+ * user types.
+ */
+export const WikiPageFrontmatterSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    kind: WikiPageKindSchema,
+    created: IsoDateLikeSchema,
+    last_updated: IsoDateLikeSchema,
+    status: WikiPageStatusSchema,
+    superseded_by: z.string().min(1).max(256).optional(),
+    sources: z.array(WikiPageSourceSchema).max(50).optional(),
+  })
+  .strict();
+export type WikiPageFrontmatter = z.infer<typeof WikiPageFrontmatterSchema>;
+
+// 64 KB cap on the body. Mirrors vault-template/AGENTS.md §5.
+export const WIKI_BODY_MAX_BYTES = 64 * 1024;
+
+// Request bodies for the wiki write route. Accepts either a structured
+// {frontmatter, body} shape (the default editor path) or a raw shape
+// {raw} carrying a YAML-fenced page (the merge-dialog "Use this" path,
+// where the user is editing the on-disk text directly). Exactly one of
+// the two shapes is required.
+const WikiPageStructuredWriteSchema = z
+  .object({
+    frontmatter: WikiPageFrontmatterSchema,
+    body: z.string(), // length validated separately so the code is VALIDATION_FAILED
+    before_sha: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+const WikiPageRawWriteSchema = z
+  .object({
+    raw: z.string().min(1),
+    before_sha: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const WikiPageWriteRequestSchema = z.union([
+  WikiPageStructuredWriteSchema,
+  WikiPageRawWriteSchema,
+]);
+export type WikiPageWriteRequest = z.infer<typeof WikiPageWriteRequestSchema>;
+
+// ---------- Proposals (M7 placeholder; M4 only stores the type) ----------
+
+export const ProposalActionSchema = z.enum(["create", "update"]);
+export type ProposalAction = z.infer<typeof ProposalActionSchema>;
+
+export const ProposalStatusSchema = z.enum(["pending", "merged", "rejected", "superseded"]);
+export type ProposalStatus = z.infer<typeof ProposalStatusSchema>;
+
+export const ProposalSchema = z.object({
+  id: Uuidv7Schema,
+  run_id: Uuidv7Schema,
+  page_path: z.string().regex(WIKI_PATH_REGEX, "must be a wiki page path"),
+  action: ProposalActionSchema,
+  before_sha: z.string().nullable(),
+  after_content: z.string().max(WIKI_BODY_MAX_BYTES * 2),
+  rationale: z.string().min(1).max(1000),
+  status: ProposalStatusSchema,
+  created_at: EpochSeconds,
+  reviewed_at: EpochSeconds.nullable(),
+  reviewed_by: Uuidv7Schema.nullable(),
+  artifacts_commit: z.string().nullable(),
+});
+export type Proposal = z.infer<typeof ProposalSchema>;

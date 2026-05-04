@@ -4,8 +4,14 @@
 // Server-rendered three-column shell. The header is a React island
 // (theme toggle + mobile menu); the sidebar + main + right-rail slots
 // take Astro children, which lets each surface choose its own
-// hydration directive (client:idle for the room list, client:load for
-// the active room view).
+// hydration directive (client:idle for the sidebar, client:load for
+// the active main surface).
+//
+// The chrome shows two top-level destinations: Chat (room list, /)
+// and Wiki (page tree, /w). Each is server-rendered <a> so the page
+// is a real navigation, which keeps the WS connection lifecycle
+// simple (chat opens a new socket per visit) and matches Astro's MPA
+// model.
 //
 // Mobile-sidebar visibility is driven by `<html data-sidebar-open>` —
 // AppShellHeader sets the attribute, this CSS reacts to it. Stays
@@ -21,6 +27,8 @@ interface Props {
 
 const { workspaceName, userDisplayName } = Astro.props;
 const hasRightRail = Astro.slots.has("right-rail");
+const pathname = new URL(Astro.request.url).pathname;
+const onWiki = pathname.startsWith("/w");
 ---
 
 <style>
@@ -49,6 +57,28 @@ const hasRightRail = Astro.slots.has("right-rail");
       aria-label="Sidebar"
       class="hidden w-64 shrink-0 border-r border-border bg-secondary md:block"
     >
+      <nav aria-label="Workspace nav" class="flex border-b border-border">
+        <a
+          href="/"
+          class:list={[
+            "flex-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+            !onWiki
+              ? "bg-background text-foreground"
+              : "text-muted-foreground hover:bg-background/60",
+          ]}
+          aria-current={!onWiki ? "page" : undefined}>Chat</a
+        >
+        <a
+          href="/w"
+          class:list={[
+            "flex-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+            onWiki
+              ? "bg-background text-foreground"
+              : "text-muted-foreground hover:bg-background/60",
+          ]}
+          aria-current={onWiki ? "page" : undefined}>Wiki</a
+        >
+      </nav>
       <slot name="sidebar" />
     </aside>
 

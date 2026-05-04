@@ -1,0 +1,131 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Wiki page viewer/editor for any path. The catch-all `[...path]`
+// captures the URL fragment after `/w/` and maps it to the vault
+// path `/wiki/<rest>.md`. SSR-fetches the page; on 404 renders the
+// create-this-page CTA. ?new=1 + ?title=… + ?kind=… opens the editor
+// directly with default frontmatter (used by NewPageDialog).
+
+import AppShell from "@/components/AppShell.astro";
+import { WikiEditor } from "@/components/wiki/WikiEditor";
+import { WikiTree } from "@/components/wiki/WikiTree";
+import { WikiViewer } from "@/components/wiki/WikiViewer";
+import Layout from "@/layouts/Layout.astro";
+import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type {
+  CurrentUserPayload,
+  WikiPageKind,
+  WikiPagePayload,
+  WikiTreeResponse,
+} from "@/lib/types";
+
+const params = Astro.params;
+const rawPath = (params.path ?? "") as string;
+if (!rawPath || rawPath.length === 0) return Astro.redirect("/w");
+
+const vaultPath = `/wiki/${rawPath}.md`;
+
+let me: CurrentUserPayload;
+let tree: WikiTreeResponse;
+let page: WikiPagePayload | null = null;
+
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+  tree = await ssrApiGet<WikiTreeResponse>(Astro.request, "/api/wiki-tree");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+try {
+  const data = await ssrApiGet<{ page: WikiPagePayload }>(Astro.request, `/api${vaultPath}`);
+  page = data.page;
+} catch (err) {
+  if (err instanceof SsrApiError && err.status === 404) {
+    page = null;
+  } else if (err instanceof SsrApiError && err.status === 400) {
+    return Astro.redirect("/w");
+  } else if (!(err instanceof SsrAuthRequiredError)) {
+    throw err;
+  }
+}
+
+const isOwner = me.workspace.owner_id === me.user.id;
+const url = new URL(Astro.request.url);
+const wantsNew = url.searchParams.get("new") === "1";
+const newTitle = url.searchParams.get("title") ?? "";
+const rawKind = (url.searchParams.get("kind") as WikiPageKind | null) ?? "concept";
+const newKind: WikiPageKind = [
+  "entity",
+  "decision",
+  "concept",
+  "open-question",
+  "glossary",
+].includes(rawKind)
+  ? rawKind
+  : "concept";
+
+const todayIso = new Date().toISOString().slice(0, 10);
+
+// When the user is on a "new page" flow and the page does not exist,
+// pre-build a draft payload so the editor can save it on first click.
+const draft: WikiPagePayload | null =
+  page === null && wantsNew && isOwner
+    ? {
+        path: vaultPath,
+        frontmatter: {
+          title: newTitle || rawPath.split("/").pop() || "Untitled",
+          kind: newKind,
+          created: todayIso,
+          last_updated: todayIso,
+          status: "draft",
+        },
+        body: "",
+        sha: "", // empty SHA → first save is a create (no before_sha)
+      }
+    : null;
+---
+
+<Layout title={page ? `${page.frontmatter.title} — ${me.workspace.name}` : "Wiki page not found"}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+    <WikiTree
+      slot="sidebar"
+      client:idle
+      initialPaths={tree.paths}
+      currentPath={vaultPath}
+    />
+    {
+      page ? (
+        <WikiViewer slot="main" client:load page={page} canEdit={isOwner} />
+      ) : draft ? (
+        <WikiEditor slot="main" client:load initialPage={draft} />
+      ) : (
+        <div slot="main" class="grid h-full place-items-center p-8 text-center">
+          <div class="space-y-3 max-w-md">
+            <h1 class="text-xl font-semibold">Page not found</h1>
+            <p class="text-sm text-muted-foreground">
+              No page at <code>{vaultPath}</code>.
+            </p>
+            {
+              isOwner && (
+                <p class="text-sm">
+                  <a
+                    href={`/w/${rawPath}?new=1`}
+                    class="rounded-md bg-accent px-3 py-1.5 text-accent-foreground"
+                  >
+                    Create this page
+                  </a>
+                </p>
+              )
+            }
+            <p class="text-xs">
+              <a class="text-accent underline" href="/w">
+                ← Wiki home
+              </a>
+            </p>
+          </div>
+        </div>
+      )
+    }
+  </AppShell>
+</Layout>

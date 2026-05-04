@@ -20,11 +20,13 @@
     "migrate:local": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations apply loomwiki --local --config ../../wrangler.jsonc",
     "migrate:remote": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations apply loomwiki --remote --config ../../wrangler.jsonc",
     "migrate:new": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations create loomwiki --config ../../wrangler.jsonc",
-    "seed": "echo 'seed lands in M2/M3 with chat fixtures' && exit 1"
+    "seed": "tsx scripts/precompute-vault-template.ts",
+    "build:manifest": "tsx scripts/precompute-vault-template.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "concurrently": "^9.1.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.3"
   },
   "pnpm": {

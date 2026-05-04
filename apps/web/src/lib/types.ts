@@ -51,3 +51,73 @@ export interface CreateRoomRequest {
   name: string;
   topic?: string;
 }
+
+// ---------- Wiki (M4) ----------
+
+export type WikiPageKind = "entity" | "decision" | "concept" | "open-question" | "glossary";
+
+export type WikiPageStatus = "draft" | "published" | "superseded";
+
+export interface WikiPageSource {
+  room: string;
+  message_id: string;
+  excerpt?: string;
+}
+
+export interface WikiPageFrontmatter {
+  title: string;
+  kind: WikiPageKind;
+  created: string; // ISO-8601 date or datetime
+  last_updated: string;
+  status: WikiPageStatus;
+  superseded_by?: string;
+  sources?: WikiPageSource[];
+}
+
+export interface WikiPagePayload {
+  path: string;
+  frontmatter: WikiPageFrontmatter;
+  body: string;
+  sha: string;
+}
+
+export interface WikiPageReadResponse {
+  page: WikiPagePayload;
+}
+
+/** Structured write — sent by the editor's normal save flow. */
+export interface WikiPageStructuredWrite {
+  frontmatter: WikiPageFrontmatter;
+  body: string;
+  before_sha?: string;
+}
+
+/**
+ * Raw write — sent by the merge dialog when the user pastes / accepts
+ * the on-disk YAML page text directly. The worker re-parses with
+ * gray-matter and applies the same validation.
+ */
+export interface WikiPageRawWrite {
+  raw: string;
+  before_sha?: string;
+}
+
+export type WikiPageWriteRequest = WikiPageStructuredWrite | WikiPageRawWrite;
+
+export interface WikiTreeResponse {
+  paths: string[];
+}
+
+/**
+ * Shape of the `error.details` field on a 409 CONFLICT from PUT
+ * /api/wiki/*. The MergeDialog renders against this exactly.
+ */
+export interface WikiConflictDetails {
+  path: string;
+  current_sha: string;
+  current_raw: string;
+  base_sha: string;
+  base_raw: string;
+  attempted_frontmatter: WikiPageFrontmatter;
+  attempted_body: string;
+}

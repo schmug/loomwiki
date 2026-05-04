@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { FrontmatterPill } from "@/components/wiki/FrontmatterPill";
 
 export interface DesignSamplesProps {
   mode: "light" | "dark";
@@ -53,6 +54,47 @@ export function DesignSamples({ mode }: DesignSamplesProps) {
             <AvatarFallback>L</AvatarFallback>
           </Avatar>
           <Skeleton className="h-9 w-32" />
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">Wiki primitives</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <FrontmatterPill kind="concept" status="draft" />
+          <FrontmatterPill kind="decision" status="published" />
+          <FrontmatterPill kind="entity" status="superseded" />
+          <FrontmatterPill kind="open-question" status="draft" />
+          <FrontmatterPill kind="glossary" status="published" />
+        </div>
+        <div
+          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-700/50 dark:bg-amber-950/30"
+          role="alert"
+        >
+          <p className="font-medium">Conflict — page changed since you opened it.</p>
+          <p className="mt-1 text-muted-foreground">
+            Resolve via the 3-way merge picker. v0.0.1 does not auto-merge.
+          </p>
+        </div>
+        <div
+          className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1"
+          role="toolbar"
+          aria-label="Edit toolbar sample"
+        >
+          <Button size="icon" variant="ghost">
+            B
+          </Button>
+          <Button size="icon" variant="ghost">
+            <em>i</em>
+          </Button>
+          <Button size="icon" variant="ghost">
+            &lt;/&gt;
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
+          <Button size="sm" variant="ghost">
+            Save
+          </Button>
         </div>
       </section>
     </div>
