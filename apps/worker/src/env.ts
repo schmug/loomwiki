@@ -41,7 +41,15 @@ export interface Env {
   // revokeToken, fork). There is no file-level read/write on the
   // binding; that's the standard git protocol against repo.remote, which
   // M4.5 will implement. See lib/artifacts.ts for the typed wrapper.
-  ARTIFACTS: ArtifactsBinding;
+  // Optional because the Artifacts beta is allowlist-gated. Operators
+  // not on the allowlist comment out the `artifacts` binding in
+  // wrangler.jsonc; the v0.0.1 wiki content path uses WIKI_KV (M4
+  // backend) and never reads env.ARTIFACTS, so the deploy works
+  // without it. The two admin routes that DO call into it
+  // (`/api/_admin/wiki/bootstrap-vault`, `/api/_admin/wiki/vault-token`)
+  // throw a clear LoomwikiError when the binding is missing — they
+  // are M4.5 plumbing, not part of the dogfood happy path.
+  ARTIFACTS?: ArtifactsBinding;
 
   // AI
   AI: WorkersAiBinding;

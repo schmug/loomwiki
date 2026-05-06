@@ -39,6 +39,16 @@ const REPO_NAME_REGEX = /^[a-zA-Z0-9._-]{1,128}$/;
  */
 export async function getOrCreateVaultRepo(env: Env): Promise<ArtifactsRepo> {
   assertValidRepoName(env.ARTIFACTS_REPO);
+  if (!env.ARTIFACTS) {
+    throw new LoomwikiError(
+      ErrorCodes.INTERNAL_ERROR,
+      "Cloudflare Artifacts binding is not available on this account. " +
+        "Artifacts is allowlist-gated; the v0.0.1 wiki content path uses " +
+        "WIKI_KV and does not require it. Re-enable the `artifacts` binding " +
+        "in wrangler.jsonc once your account has Artifacts beta access.",
+      { status: 503 },
+    );
+  }
   try {
     return await env.ARTIFACTS.get(env.ARTIFACTS_REPO);
   } catch (cause) {

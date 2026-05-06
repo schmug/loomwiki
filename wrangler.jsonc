@@ -68,12 +68,19 @@
   // "ai_search": [
   //   { "binding": "AI_SEARCH", "instance_name": "loomwiki-search" }
   // ],
-  "artifacts": [
-    {
-      "binding": "ARTIFACTS",
-      "namespace": "default"
-    }
-  ],
+  // Cloudflare Artifacts binding. Currently commented out for the
+  // cortech.online dogfood deploy because the Artifacts beta is
+  // allowlist-gated and this account doesn't have access (deploy
+  // surfaces "[code: 10015] You do not have access to use Artifacts").
+  // The v0.0.1 wiki content path uses WIKI_KV and never reads
+  // env.ARTIFACTS at runtime, so the deploy works without this. The
+  // two admin routes that DO call in (`/api/_admin/wiki/bootstrap-vault`
+  // and `/api/_admin/wiki/vault-token`) return a clear 503 with the
+  // re-enable instructions when the binding is absent. Uncomment once
+  // your account is on the Artifacts allowlist.
+  // "artifacts": [
+  //   { "binding": "ARTIFACTS", "namespace": "default" }
+  // ],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     "WORKSPACE_NAME": "default",
