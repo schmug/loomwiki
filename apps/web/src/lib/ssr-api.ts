@@ -65,6 +65,20 @@ export async function ssrApiGet<T>(
   const cookie = request.headers.get("Cookie");
   if (cookie) headers.Cookie = cookie;
 
+  // Forward Cloudflare Access headers from the inbound request to the
+  // worker. Critical when going through the service binding: a binding
+  // fetch bypasses the public edge, so Access headers Cloudflare would
+  // normally inject AT the edge (CF-Access-Jwt-Assertion etc.) aren't
+  // re-added on the binding hop. The Pages SSR request itself DID
+  // traverse Access, so these headers are present on `request`; we
+  // forward them so the worker's auth middleware sees the same view it
+  // would on a direct browser → worker call.
+  const accessHeaders = ["CF-Access-Jwt-Assertion", "Cf-Access-Authenticated-User-Email"];
+  for (const name of accessHeaders) {
+    const value = request.headers.get(name);
+    if (value !== null) headers[name] = value;
+  }
+
   // Local-dev: the browser-side fetch adds X-Local-Dev-Email from
   // PUBLIC_LOOMWIKI_DEV_EMAIL, but SSR's first hop has no browser to
   // do that — so we mirror the same env on the SSR side too. The
