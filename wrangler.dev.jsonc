@@ -73,13 +73,16 @@
     "LLM_DAILY_LIMIT_PER_USER_ASK": "100",
     "LLM_DAILY_LIMIT_PER_USER_SEARCH": "1000",
     "LLM_DAILY_LIMIT_PER_WORKSPACE_ASK": "1000",
-    "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000"
+    "LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH": "10000",
+    "INGEST_DAILY_LIMIT_PER_WORKSPACE": "100"
   },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1.0
   },
   "triggers": {
-    "crons": ["0 2 * * *"]
+    // 02:00 UTC daily — chat-log archive (M5).
+    // 03:00 UTC daily — ingest scan (M7), 60 min after the archive lands.
+    "crons": ["0 2 * * *", "0 3 * * *"]
   }
 }

@@ -86,6 +86,10 @@ export interface Env {
   LLM_DAILY_LIMIT_PER_USER_SEARCH: string;
   LLM_DAILY_LIMIT_PER_WORKSPACE_ASK: string;
   LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH: string;
+  // M7: ingest cost guard. Workspace-scoped only — manual triggers
+  // come from members but the run is a shared workspace operation.
+  // Default 100/day; tune via wrangler vars.
+  INGEST_DAILY_LIMIT_PER_WORKSPACE?: string;
 
   // Secrets — undefined locally unless set via .dev.vars
   SENTRY_DSN?: string;

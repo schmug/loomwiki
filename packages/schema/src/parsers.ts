@@ -10,8 +10,10 @@
 import { ErrorCodes, LoomwikiError } from "@loomwiki/shared";
 import type { infer as ZodInfer, ZodTypeAny } from "zod";
 import {
+  IngestRunRowSchema,
   LlmUsageRowSchema,
   MessageRowSchema,
+  ProposalRowSchema,
   RoomMemberRowSchema,
   RoomRowSchema,
   UserRowSchema,
@@ -39,6 +41,8 @@ export const parseRoomMemberRow = (row: unknown) =>
 export const parseMessageRow = (row: unknown) => parseRow(MessageRowSchema, row, "messages");
 export const parseLlmUsageRow = (row: unknown) =>
   parseRow(LlmUsageRowSchema, row, "llm_usage_daily");
+export const parseIngestRunRow = (row: unknown) => parseRow(IngestRunRowSchema, row, "ingest_runs");
+export const parseProposalRow = (row: unknown) => parseRow(ProposalRowSchema, row, "proposals");
 
 /**
  * Parse a Zod-validated wiki frontmatter object. Caller hands in an
@@ -61,12 +65,21 @@ export function parseWikiFrontmatter(value: unknown): WikiPageFrontmatter {
 export type {
   AskCitation,
   AskRequest,
+  IngestAgentResponse,
+  IngestProposal,
+  IngestProposalSource,
+  IngestRunRow,
+  IngestRunStatus,
+  IngestRunTrigger,
   LlmUsageKind,
   LlmUsageRow,
   LlmUsageScopeId,
   LlmUsageScopeType,
   Message,
   Proposal,
+  ProposalAction,
+  ProposalRow,
+  ProposalStatus,
   Room,
   RoomMember,
   RoomMemberRole,

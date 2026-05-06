@@ -38,6 +38,7 @@ function envWithLimits(
     user_search: number;
     ws_ask: number;
     ws_search: number;
+    ws_ingest: number;
   }>,
 ): Env {
   return {
@@ -46,6 +47,7 @@ function envWithLimits(
     LLM_DAILY_LIMIT_PER_USER_SEARCH: String(overrides.user_search ?? 1000),
     LLM_DAILY_LIMIT_PER_WORKSPACE_ASK: String(overrides.ws_ask ?? 10000),
     LLM_DAILY_LIMIT_PER_WORKSPACE_SEARCH: String(overrides.ws_search ?? 10000),
+    INGEST_DAILY_LIMIT_PER_WORKSPACE: String(overrides.ws_ingest ?? 100),
   } as Env;
 }
 
@@ -63,6 +65,7 @@ describe("readLimits", () => {
       perUserSearch: 1000,
       perWorkspaceAsk: 1000,
       perWorkspaceSearch: 10000,
+      perWorkspaceIngest: 100,
     });
   });
 });
@@ -181,6 +184,90 @@ describe("assertWithinLimit", () => {
         })
       ).ask_count,
     ).toBe(1);
+  });
+
+  it("ingest is workspace-scoped only — does not touch the user counter", async () => {
+    const { userA } = await bootstrap();
+    const e = envWithLimits({ ws_ingest: 5 });
+
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ingest",
+    });
+
+    // Workspace counter should be at 1; user counter must be 0 (no
+    // per-user counting for ingest).
+    const wsUsage = await getUsage(env, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      scopeType: "workspace",
+      scopeId: "_workspace",
+    });
+    const userUsage = await getUsage(env, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      scopeType: "user",
+      scopeId: userA,
+    });
+    expect(wsUsage.ingest_count).toBe(1);
+    expect(userUsage.ingest_count).toBe(0);
+  });
+
+  it("ingest cap rejects with workspace-scope details", async () => {
+    const { userA } = await bootstrap();
+    const e = envWithLimits({ ws_ingest: 2 });
+
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ingest",
+    });
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ingest",
+    });
+
+    let caught: unknown = null;
+    try {
+      await assertWithinLimit({
+        env: e,
+        workspaceId: DEFAULT_WORKSPACE_ID,
+        userId: userA,
+        kind: "ingest",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(isLoomwikiError(caught)).toBe(true);
+    if (!isLoomwikiError(caught)) return;
+    expect(caught.code).toBe("RATE_LIMITED");
+    expect(caught.details).toMatchObject({ limit: 2, used: 2, scope: "workspace" });
+  });
+
+  it("ingest counter is independent of ask/search", async () => {
+    const { userA } = await bootstrap();
+    const e = envWithLimits({ user_ask: 1, ws_ingest: 100 });
+
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ask",
+    });
+    await expect(
+      assertWithinLimit({ env: e, workspaceId: DEFAULT_WORKSPACE_ID, userId: userA, kind: "ask" }),
+    ).rejects.toThrow();
+
+    // Ingest still works despite the user's ask cap being hit.
+    await assertWithinLimit({
+      env: e,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      userId: userA,
+      kind: "ingest",
+    });
   });
 
   it("ask and search counters are independent", async () => {

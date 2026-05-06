@@ -278,3 +278,61 @@ the top of the result list and on the empty state. This is expected on
 fresh local dev environments before the operator runs the AI Search
 provisioning flow — point users at the M6 setup section of `DEPLOY.md`
 when they ask why ranking feels keyword-y.
+
+## Inbox + proposals (M7)
+
+The inbox is the human-review surface for the ingest agent's
+proposals. Three new web pieces ship in M7:
+
+- [`InboxBadge`](src/components/inbox/InboxBadge.tsx) — sidebar pill
+  showing the pending-proposal count. Hydrates `client:idle` (it's a
+  derived nav element, not the active surface). Polls
+  `/api/proposals?count=true&status=pending` every 60s; renders nothing
+  when the count is 0 so the chrome stays clean.
+- [`ProposalsList`](src/components/inbox/ProposalsList.tsx) —
+  list view at `/inbox`. SSR-fetches `/api/proposals?status=pending`
+  and renders without JS; the inbox page is a real navigation, not an
+  island.
+- [`ProposalDetail`](src/components/inbox/ProposalDetail.tsx) — review
+  pane at `/inbox/proposals/:id`. Hydrates `client:load` (Merge /
+  Reject buttons need to be live on first paint). Side-by-side: left
+  shows the current wiki page (only for `update` actions), right shows
+  the proposed page. Both panes flow through the shared
+  `SanitizedMarkdown` component — same allowlist as chat + wiki, no
+  drift.
+
+### Inbox route conventions
+
+| Surface | Directive | Why |
+|---|---|---|
+| `<InboxBadge>` in AppShell sidebar | `client:idle` | derived chrome; not on the latency hot path |
+| `<ProposalsList>` on `/inbox` | (no directive) | server-rendered; the list is static after SSR fetch |
+| `<ProposalDetail>` on `/inbox/proposals/:id` | `client:load` | Merge / Reject buttons need to be live on first paint, and the conflict-banner state lives in the component |
+
+### Conflict handling on merge
+
+`POST /api/proposals/:id/merge` calls into the same wiki write path as
+M4's `PUT /api/wiki/*`, so the conflict-detection model is identical.
+On 409 the worker returns the M4 merge-payload shape; the
+`ProposalDetail` component renders a conflict banner pointing the user
+at the wiki editor (`/w/<path>`) where the existing
+[`MergeDialog`](src/components/wiki/MergeDialog.tsx) handles the
+resolution. The inbox does NOT inline the merge dialog — operators
+resolve conflicts in the canonical M4 surface so they get the full
+3-way picker.
+
+### M8 plug-in points
+
+- `DigestDelivery` interface (`apps/worker/src/lib/digest-delivery.ts`)
+  — M8 adds `EmailDigestDelivery` behind the same contract. The wiki
+  page renders unchanged; email becomes a per-user opt-in addition.
+- Per-user inbox notifications (Slack/email/web push) — none in M7.
+  The badge + the daily digest wiki page are the only notifications.
+- Bulk merge / reject — defer; v0.0.1 enforces one-at-a-time review.
+
+### Manual ingest trigger from chat
+
+Tracked as a follow-up — the M7 prompt's "Things to surface" list
+includes ⌘K command-palette integration; deferred. Operators trigger
+manually via `curl POST /api/rooms/:rid/ingest` for now (see
+`DEPLOY.md` for the smoke recipe).

@@ -481,6 +481,159 @@ small number and calling /ask repeatedly:
 #   "details":{"limit":2,"used":2,"scope":"user","reset_at":"..."}}}
 ```
 
+## Ingest agent + proposal inbox (M7)
+
+M7 wires the marquee feature: chat → wiki proposals → human review →
+merged wiki. The agent runs on two paths that converge on the same
+code: a manual trigger (`POST /api/rooms/:rid/ingest`) and a daily
+cron at 03:00 UTC. Operator setup is the cron schedule + a single
+optional env var.
+
+### 1. Cron schedule
+
+`wrangler.jsonc` declares both the M5 archive and the M7 ingest
+schedules:
+
+```jsonc
+"triggers": {
+  "crons": ["0 2 * * *", "0 3 * * *"]
+}
+```
+
+The 03:00 UTC schedule fires 60 minutes after the M5 archive cron lands
+yesterday's chat logs. The handler in
+[`apps/worker/src/scheduled.ts`](apps/worker/src/scheduled.ts)
+dispatches by `controller.cron`:
+
+| Cron | Handler | What it does |
+|------|---------|--------------|
+| `0 2 * * *` | `runArchive()` | Aggregates yesterday's chat → `/rooms/<slug>/log/<date>.md` |
+| `0 3 * * *` | `runIngestScan()` | Triggers `runIngestForRoom()` per room; renders `/wiki/_inbox/<today>.md` |
+
+### 2. Tune the ingest cost guard
+
+```jsonc
+"vars": {
+  "INGEST_DAILY_LIMIT_PER_WORKSPACE": "100"
+}
+```
+
+Workspace-scoped only — there is no per-user ingest cap. The cron and
+manual triggers share the budget. 100 runs/day gives comfortable
+headroom for a dogfood team (~10 runs/day) plus admin backfill.
+
+### 3. Verifying the cron is firing in production
+
+Cloudflare dashboard → **Workers & Pages → loomwiki-api → Triggers**
+shows both schedules. The handler emits structured log lines
+(`event: ingest_scan_complete`); tail with:
+
+```sh
+wrangler tail --format pretty | grep -E 'ingest_scan_complete|archive_run_complete'
+```
+
+### 4. Manual ingest trigger
+
+To trigger an ingest run on demand from a chat room — useful for
+backfill, smoke verification, or after a fix:
+
+```sh
+ROOM_ID=...   # the room's UUIDv7
+curl -s -X POST -H "X-Local-Dev-Email: cory@example.com" \
+  "http://127.0.0.1:8788/api/rooms/$ROOM_ID/ingest" | jq .
+# Expected (lock acquired):
+#   { ok: true, data: { run_id: "...", status: "running" } }
+# Expected (another run already in flight; HTTP 202):
+#   { ok: true, data: { run_id: "...", status: "lock_held" } }
+```
+
+Poll the run status:
+
+```sh
+RUN=...
+curl -s -H "X-Local-Dev-Email: cory@example.com" \
+  "http://127.0.0.1:8788/api/runs/$RUN" | jq .
+# .data.run.status walks: running → succeeded | failed
+```
+
+Inspect the proposals (if any):
+
+```sh
+curl -s -H "X-Local-Dev-Email: cory@example.com" \
+  "http://127.0.0.1:8788/api/proposals?status=pending" | jq .
+```
+
+### 5. Manual digest re-render (operator backfill)
+
+If you need to re-render a day's digest (e.g., after a fix that
+changed the format, or to backfill for a date the cron missed):
+
+```sh
+DATE=2026-05-04
+curl -s -X POST -H "X-Local-Dev-Email: cory@example.com" \
+  "http://127.0.0.1:8788/api/_admin/digest/render?date=$DATE" | jq .
+# Expected: { ok: true, data: { delivered: true, path: "/wiki/_inbox/<date>.md" } }
+```
+
+The route is owner-only and idempotent — re-runs overwrite the file
+cleanly. Underlying renderer is deterministic (`renderDigestMarkdown`
+in `lib/digest-template.ts`); identical inputs produce byte-identical
+output.
+
+### 6. Local-dev path: invoking the cron
+
+The worker's `--test-scheduled` flag exposes `/__scheduled` for ticking
+crons synchronously. Both schedules dispatch through `scheduled.ts`'s
+switch:
+
+```sh
+pnpm --filter @loomwiki/worker dev --test-scheduled --port 8788
+# In another shell:
+curl -s "http://127.0.0.1:8788/__scheduled?cron=0+3+*+*+*"
+# Triggers the M7 ingest scan + digest render.
+```
+
+Watch `wrangler tail` for `ingest_scan_complete`.
+
+### 7. Prompt-injection threat model summary
+
+The agent processes untrusted chat content. Every authenticated
+workspace member can attempt to inject instructions; some will. Five
+independent guards from `docs/SECURITY.md` §2.2 ship together — skip
+any one and the corresponding attack vector opens:
+
+| # | Guard | If skipped |
+|---|------|-----------|
+| 1 | Input sanitization (NFC + zero-width/bidi/HTML strip) | XSS via stored content (A1, A3) |
+| 2 | Structured output (Zod parse + retry) | Free-form text routes around the schema (A1) |
+| 3 | Path allowlist (`/wiki/<allow>`) | `/AGENTS.md` hijack (A6) |
+| 4 | Secret scrub (regex set) | Leaked credentials echoed to inbox |
+| 5 | Admin-merge-only (workspace-owner gate) | All of the above auto-deploy |
+
+Plus source-citation validation (every `message_id` must be in the run
+input) closes attack scenario A8 (citation laundering). Each guard has
+a dedicated test in
+[`apps/worker/src/__tests__/ingest-agent.test.ts`](apps/worker/src/__tests__/ingest-agent.test.ts).
+
+The full threat model lives in
+[`docs/SECURITY.md`](docs/SECURITY.md) §2; the design rationale lives
+in [`docs/ADR/0005-ingest-agent-design.md`](docs/ADR/0005-ingest-agent-design.md).
+
+### 8. Operator caution: AGENTS.md is privileged
+
+`AGENTS.md` (in the vault, at the top-level `/AGENTS.md`) is the
+agent's runtime contract. The §11 sub-sections are operator-
+customizable; the rest is part of the security model. The agent
+ITSELF cannot propose changes to `/AGENTS.md` (path allowlist drops
+them). Operators edit `AGENTS.md` directly via the wiki UI or by
+pushing to the vault repo — there is no "admin merge" path that goes
+through the proposals queue.
+
+A change to `AGENTS.md` propagates to running ingest isolates after
+the in-memory cache TTL (5 minutes) — fresh Worker isolates pick it
+up immediately. Restart the worker (`wrangler deploy`) for an
+immediate global cutover.
+
 ## Right-to-deletion (operator note)
 
 Chat messages can be soft-deleted from D1 and the live DO. They cannot be
