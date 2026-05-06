@@ -85,8 +85,8 @@
     // dashboard or a wrangler `env` block. The dev defaults below match the
     // values vitest tests use (with mocked JWKS in KV); they are not valid
     // for a real Access tenant.
-    "ACCESS_TEAM": "loomwiki-dev",
-    "ACCESS_AUD": "loomwiki-dev-aud",
+    "ACCESS_TEAM": "coryrankin",
+    "ACCESS_AUD": "f90f60bf443ac23aef65d1c69f44c5baaf3beb9674dc836256f6e845b3c103fb",
     // Local-dev auth bypass (X-Local-Dev-Email header). Triple-gated; see
     // apps/worker/src/middleware/auth.ts. Default off; flip to "true" via
     // .dev.vars for local development only.
@@ -117,7 +117,7 @@
     // dashboard (AI → AI Gateway → create gateway → note slug). Empty
     // means "don't route through the gateway", which loses the third
     // cost-defense layer (per ADR-0004 §c).
-    "AI_GATEWAY_ID": "",
+    "AI_GATEWAY_ID": "loomwiki",
     // Operator's Cloudflare account ID. Required for AI Gateway URL
     // composition. Safe to commit — it's an account identifier, not
     // a secret.
