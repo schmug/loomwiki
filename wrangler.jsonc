@@ -16,11 +16,14 @@
   "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "routes": [
-    // Domain is loomwiki.com per resolved decisions; actual registration is
-    // operator-side. Comment out if deploying to a fork without the domain.
-    { "pattern": "api.loomwiki.com", "custom_domain": true }
-  ],
+  // Single-domain dogfood deployment: Cloudflare Pages serves the web app
+  // at `loomwiki.cortech.online` (custom domain on the Pages project), and
+  // this Worker handles `/api/*` on the same hostname. Workers route
+  // patterns take precedence over Pages custom domains for overlapping
+  // paths, so the two coexist on one hostname without per-side subdomains.
+  // To deploy to a different operator's domain, replace the pattern + zone
+  // and provision a Pages project with the matching custom domain.
+  "routes": [{ "pattern": "loomwiki.cortech.online/api/*", "zone_name": "cortech.online" }],
   "durable_objects": {
     "bindings": [{ "name": "CHAT_ROOM", "class_name": "ChatRoom" }]
   },
@@ -29,13 +32,13 @@
     {
       "binding": "DB",
       "database_name": "loomwiki",
-      "database_id": "<TBD>",
+      "database_id": "2160f5b1-1226-459b-a083-b214498c7283",
       "migrations_dir": "packages/schema/d1-migrations"
     }
   ],
   "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "loomwiki-attachments" }],
   "kv_namespaces": [
-    { "binding": "CACHE", "id": "<TBD>" },
+    { "binding": "CACHE", "id": "6181f01467c34a7ea5574720ba6be01b" },
     // Wiki page storage for v0.0.1. The vault is fronted by Cloudflare
     // Artifacts (binding `ARTIFACTS` below) for repo lifecycle, but the
     // Artifacts Workers binding currently exposes only repo-level methods
@@ -43,7 +46,7 @@
     // happen via the Git protocol against repo.remote in a follow-up
     // milestone (M4.5). For now, wiki content is durably persisted in this
     // KV namespace, keyed by `wiki:<path>`. See docs/ADR/0003.
-    { "binding": "WIKI_KV", "id": "<TBD>" }
+    { "binding": "WIKI_KV", "id": "01654647cb3a452cabbe27c1b5fb52f0" }
   ],
   "ai": { "binding": "AI" },
   // M6: AI Search hybrid (BM25 + vector) over the workspace vault.
@@ -52,13 +55,19 @@
   // the wire-up; the instance itself is workspace-side configuration.
   // The ai-search.ts wrapper auto-falls-back to the D1 FTS5 index when
   // the binding is missing, throws, or returns 5xx, so this binding is
-  // soft-required: code paths still work in local dev without it.
-  "ai_search": [
-    {
-      "binding": "AI_SEARCH",
-      "instance_name": "loomwiki-search"
-    }
-  ],
+  // soft-required: code paths still work without it.
+  //
+  // Currently commented out for the cortech.online dogfood deploy
+  // because the wrangler 4.x CLI's `ai-search create` only supports
+  // `r2`/`web-crawler` data sources, and dashboard provisioning of the
+  // Artifacts data source requires the Artifacts allowlist. The worker
+  // auto-detects the missing binding and serves the FTS5 fallback;
+  // search remains keyword-only until this is uncommented + an
+  // instance is provisioned. To enable: dashboard → AI → AI Search →
+  // Create instance → name `loomwiki-search`, then uncomment below.
+  // "ai_search": [
+  //   { "binding": "AI_SEARCH", "instance_name": "loomwiki-search" }
+  // ],
   "artifacts": [
     {
       "binding": "ARTIFACTS",
@@ -99,9 +108,20 @@
     // CF_ACCOUNT_ID is required for AI Gateway URL composition. It is
     // safe to expose (it's an account identifier, not a secret); set it
     // to the operator's Cloudflare account ID at deploy time.
-    "AI_SEARCH_ENABLED": "true",
+    // AI Search is provisioned-out in the cortech.online dogfood deploy
+    // (see commented `ai_search` block above). Setting "false" here
+    // skips the AI Search call entirely in lib/search.ts so the FTS5
+    // fallback path runs without a guaranteed-throw round-trip.
+    "AI_SEARCH_ENABLED": "false",
+    // AI_GATEWAY_ID is the gateway slug — operator fills this in from
+    // dashboard (AI → AI Gateway → create gateway → note slug). Empty
+    // means "don't route through the gateway", which loses the third
+    // cost-defense layer (per ADR-0004 §c).
     "AI_GATEWAY_ID": "",
-    "CF_ACCOUNT_ID": "",
+    // Operator's Cloudflare account ID. Required for AI Gateway URL
+    // composition. Safe to commit — it's an account identifier, not
+    // a secret.
+    "CF_ACCOUNT_ID": "f0fc4ca5b74274f7ba892e6c9ec411a7",
     // Daily caps. Per-user gates a typical bad actor; per-workspace
     // gates a coordinated abuse vector inside one workspace. AI Gateway
     // hard daily cap is configured separately via the CF dashboard.

@@ -4,6 +4,16 @@
 > deploy story rounds out across M1–M8; this file grows with each milestone.
 > M1 covers auth + the data layer.
 
+## Quick path: dogfood deploy on `loomwiki.cortech.online`
+
+The reference deploy is a single-domain setup:
+
+- **Worker** (`loomwiki-api`) handles `/api/*` on `loomwiki.cortech.online`.
+- **Pages** project (`loomwiki-web`) serves everything else on the same hostname (Astro SSR).
+- Workers route patterns take precedence over Pages custom domains for overlapping paths, so both coexist on one hostname without subdomain splits.
+
+The full setup is in this file's section-by-section flow — DNS → bindings → Access → secrets → deploy. The cortech-specific pattern is in §M7-dogfood at the bottom; the rest of the file is generic and works for any operator's domain.
+
 ## Prerequisites
 
 - A Cloudflare account (free tier is fine for the dogfood deploy).
@@ -633,6 +643,131 @@ A change to `AGENTS.md` propagates to running ingest isolates after
 the in-memory cache TTL (5 minutes) — fresh Worker isolates pick it
 up immediately. Restart the worker (`wrangler deploy`) for an
 immediate global cutover.
+
+## Dogfood deploy (`loomwiki.cortech.online`) + live smoke
+
+This section is the cortech-specific reference deploy. The same pattern
+works for any operator's domain — replace `loomwiki.cortech.online`
+and `cortech.online` with your hostname + zone throughout.
+
+### 1. DNS
+
+- [ ] Confirm `cortech.online` is on Cloudflare's nameservers (Cloudflare dashboard → Websites → your zone → Overview).
+- [ ] No A/AAAA record needed for `loomwiki.cortech.online` — both Pages custom domain and Worker route create their own DNS records on attach.
+
+### 2. Bindings (already provisioned in this fork)
+
+Account ID `f0fc4ca5b74274f7ba892e6c9ec411a7` already has:
+
+| Binding | Resource | ID |
+|---|---|---|
+| `DB` | D1 database `loomwiki` | `2160f5b1-1226-459b-a083-b214498c7283` |
+| `CACHE` | KV namespace `CACHE` | `6181f01467c34a7ea5574720ba6be01b` |
+| `WIKI_KV` | KV namespace `WIKI_KV` | `01654647cb3a452cabbe27c1b5fb52f0` |
+| `ATTACHMENTS` | R2 bucket `loomwiki-attachments` | (named) |
+
+These are already wired into `wrangler.jsonc`. A fork on a different
+account replaces them via the standard one-time-setup steps above.
+
+### 3. AI Search — DEFERRED
+
+Wrangler 4.x `ai-search create` only supports `r2`/`web-crawler`
+sources, and dashboard provisioning of the Artifacts source requires
+the Artifacts allowlist. The dogfood deploy runs on the FTS5 fallback
+(`AI_SEARCH_ENABLED: "false"` in `wrangler.jsonc` `vars`); search is
+keyword-only. To enable later: dashboard → AI → AI Search → Create
+instance named `loomwiki-search`, then uncomment the `ai_search` block
+in `wrangler.jsonc` and flip `AI_SEARCH_ENABLED` to `"true"`.
+
+### 4. AI Gateway
+
+- [ ] Dashboard: **AI → AI Gateway → Create gateway**, name `loomwiki`.
+- [ ] **Settings → Daily request cap**: 5000 (the third cost-defense layer; ADR-0004 §c).
+- [ ] **API tokens → Create token → Workers AI: Run**. Save the value.
+- [ ] In `wrangler.jsonc` `vars`: set `AI_GATEWAY_ID` to the gateway slug. (`CF_ACCOUNT_ID` is already set to the cortech account.)
+
+### 5. Cloudflare Access (Zero Trust)
+
+- [ ] **Zero Trust → Access → Applications → Add application → Self-hosted**.
+- [ ] Application domain: `loomwiki.cortech.online`.
+- [ ] **Identity providers**: enable **One-time PIN** (add GitHub OAuth or Google Workspace if you want SSO).
+- [ ] **Policy 1 — operator login**: Action=**Allow**, Include: emails matching your dogfood email(s).
+- [ ] **Policy 2 — automated tests**: Action=**Service Auth**.
+- [ ] **Service tokens** (Zero Trust → Access → Service Auth → Create Service Token): name `loomwiki-claude-smoke`. Save the **Client ID** and **Client Secret** somewhere safe — the secret is shown once. Attach to Policy 2.
+- [ ] Note the **AUD tag** (Access app overview → Application Audience).
+- [ ] In `wrangler.jsonc` `vars`: set `ACCESS_TEAM` to your Zero Trust team subdomain (the `<team>` in `<team>.cloudflareaccess.com`) and `ACCESS_AUD` to the AUD tag.
+
+### 6. Worker secrets
+
+```sh
+wrangler secret put BYOK_ENCRYPTION_KEY     # paste output of: openssl rand -base64 32
+wrangler secret put AI_GATEWAY_TOKEN        # the API token from step 4
+# wrangler secret put SENTRY_DSN            # optional
+# wrangler secret put ARTIFACTS_TOKEN       # M4.5+; leave unset for v0.0.1 dogfood
+```
+
+### 7. Pages project (one-time)
+
+```sh
+wrangler pages project create loomwiki-web --production-branch main
+```
+
+In the dashboard: **Workers & Pages → loomwiki-web → Custom domains → Add custom domain → `loomwiki.cortech.online`**.
+
+(The Cloudflare dashboard handles the certificate provisioning automatically. Wait for the certificate to go active before attempting your first deploy; usually < 1 minute.)
+
+### 8. Apply migrations + deploy
+
+```sh
+pnpm migrate:remote          # D1 migrations 0001–0003
+pnpm deploy                  # worker (loomwiki-api) — claims the /api/* route
+pnpm deploy:web              # Pages (loomwiki-web) — astro build + wrangler pages deploy
+```
+
+Verify:
+
+```sh
+# Health (the one open route — no Access required):
+curl -s https://loomwiki.cortech.online/api/health | jq .
+
+# Authenticated routes return a 302 to the Access challenge:
+curl -sI https://loomwiki.cortech.online/api/me | head -3
+```
+
+### 9. Bootstrap the vault
+
+Sign in via browser at <https://loomwiki.cortech.online> first — the JIT user-creation runs and your email becomes workspace owner. Then:
+
+```sh
+# In a browser shell that has the Access cookie (or via the service
+# token if your operator email has Access):
+curl -X POST https://loomwiki.cortech.online/api/_admin/wiki/bootstrap-vault \
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET"
+```
+
+This is also reachable from the operator's authenticated browser session via dashboard or `curl`.
+
+### 10. Live smoke (Claude / CI)
+
+Service-token authed end-to-end smoke. Exercises the M7 happy path
+(create room → seed → ingest → poll → merge → verify wiki page →
+render digest):
+
+```sh
+export CF_ACCESS_CLIENT_ID="<token client id>"
+export CF_ACCESS_CLIENT_SECRET="<token client secret>"
+export LOOMWIKI_BASE_URL="https://loomwiki.cortech.online"
+
+pnpm smoke:live
+```
+
+Output is a stepwise log; non-zero exit means the run failed (e.g. ingest run came back `failed`, or a route 404'd). The script is idempotent: re-running on a workspace that already has the smoke room and a merged proposal short-circuits each step.
+
+**Caveats**:
+
+- Message seeding is currently manual (the v0.0.1 REST API doesn't have a POST shape for messages — they flow through the WS protocol). The smoke script logs a warning and skips when the room already has ≥3 messages; for a fresh room, post 3+ messages via the chat UI before running.
+- The smoke calls `/api/_admin/digest/render` — that's owner-only. The service token's user identity must match the workspace owner. v0.0.1's single-tenant model assigns ownership to the first user that hits `/api/me`; if you sign in via OTP first, your OTP email is the owner and the service token (a different identity) gets a 403 on admin routes. Workaround: ensure the service-token's email matches your operator email, or use the operator browser session to run the digest render.
 
 ## Right-to-deletion (operator note)
 
