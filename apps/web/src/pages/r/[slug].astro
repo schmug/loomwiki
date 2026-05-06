@@ -14,9 +14,10 @@ import type { CurrentUserPayload } from "@/lib/types";
 const { slug } = Astro.params;
 if (!slug) return Astro.redirect("/");
 
+const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 try {
-  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) {
     return Astro.redirect("/login");
