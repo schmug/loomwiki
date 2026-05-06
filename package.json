@@ -16,7 +16,7 @@
     "typecheck": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" run typecheck",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "deploy": "pnpm --filter @loomwiki/worker deploy",
+    "deploy:worker": "pnpm --filter @loomwiki/worker deploy",
     "deploy:web": "pnpm --filter @loomwiki/web deploy",
     "deploy:all": "pnpm --filter @loomwiki/worker deploy && pnpm --filter @loomwiki/web deploy",
     "smoke:live": "tsx scripts/smoke-live.ts",
