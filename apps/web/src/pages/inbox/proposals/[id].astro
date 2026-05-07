@@ -21,12 +21,17 @@ import type {
 const { id } = Astro.params;
 if (!id) return Astro.redirect("/inbox");
 
+const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 let detail: ProposalDetailResponse;
 try {
   [me, detail] = await Promise.all([
-    ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me"),
-    ssrApiGet<ProposalDetailResponse>(Astro.request, `/api/proposals/${encodeURIComponent(id)}`),
+    ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env),
+    ssrApiGet<ProposalDetailResponse>(
+      Astro.request,
+      `/api/proposals/${encodeURIComponent(id)}`,
+      env,
+    ),
   ]);
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
@@ -42,6 +47,7 @@ if (detail.proposal.action === "update") {
     const fetched = await ssrApiGet<WikiPageReadResponse>(
       Astro.request,
       `/api${detail.proposal.page_path}`,
+      env,
     );
     currentPage = fetched.page;
   } catch (err) {

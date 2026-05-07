@@ -25,20 +25,21 @@ if (!rawPath || rawPath.length === 0) return Astro.redirect("/w");
 
 const vaultPath = `/wiki/${rawPath}.md`;
 
+const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 let tree: WikiTreeResponse;
 let page: WikiPagePayload | null = null;
 
 try {
-  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
-  tree = await ssrApiGet<WikiTreeResponse>(Astro.request, "/api/wiki-tree");
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
+  tree = await ssrApiGet<WikiTreeResponse>(Astro.request, "/api/wiki-tree", env);
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
   throw err;
 }
 
 try {
-  const data = await ssrApiGet<{ page: WikiPagePayload }>(Astro.request, `/api${vaultPath}`);
+  const data = await ssrApiGet<{ page: WikiPagePayload }>(Astro.request, `/api${vaultPath}`, env);
   page = data.page;
 } catch (err) {
   if (err instanceof SsrApiError && err.status === 404) {

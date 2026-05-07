@@ -1,16 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// SSR-side fetch helpers for Astro pages. The Astro dev server proxies
-// /api/* to the worker (8788), but proxy URLs are relative — when SSR
-// runs on the dev server, fetch resolves against the request origin,
-// which works in Astro because it injects a request-scoped fetch.
+// SSR-side fetch helpers for Astro pages. Two transport paths:
 //
-// Returns the typed payload directly on success, or throws an
-// SsrAuthRequiredError on 401 so the caller can redirect to Access. We
-// don't import the browser-side api.ts here because it reads
-// `document` (login URL meta) which doesn't exist in SSR.
+//   1. Service binding (preferred in production). On Cloudflare Pages,
+//      a same-host fetch from SSR back to `loomwiki.cortech.online/api/*`
+//      gets short-circuited to the Pages runtime — Worker routes on
+//      the same hostname are NOT consulted, so the API worker never
+//      sees the request and Pages returns 404. The documented fix is
+//      a Pages → Worker service binding (declared in
+//      `apps/web/wrangler.jsonc` as
+//      `services: [{ binding: "API", service: "loomwiki-api" }]`).
+//      When the binding is present, `env.API.fetch(...)` bypasses
+//      DNS/edge entirely and lands directly in the worker.
+//
+//   2. Plain fetch (dev fallback). The Astro dev server (4321) proxies
+//      `/api/*` to the worker on 8788 via Vite's HTTP proxy, so a
+//      relative-resolving fetch against the request origin works.
+//      Same shape used as a fallback in any prod environment without
+//      the service binding configured.
+//
+// Callers pass `Astro.locals.runtime?.env` so the helper can pick the
+// right path. Dev pages can omit it; only the production deploy has a
+// runtime with bindings.
 
 import type { ApiResult } from "@loomwiki/shared";
+
+/**
+ * Shape of the relevant subset of `Astro.locals.runtime.env` in
+ * production. Only the `API` service binding matters here; bindings
+ * we don't reference (D1, KV, etc.) are owned by the API worker, not
+ * the Pages worker.
+ */
+export interface SsrRuntimeEnv {
+  API?: { fetch: (request: Request) => Promise<Response> };
+}
 
 export class SsrAuthRequiredError extends Error {
   constructor() {
@@ -33,10 +56,28 @@ export class SsrApiError extends Error {
  * so Cloudflare Access (or the local-dev bypass) gates this hop the
  * same way the browser would.
  */
-export async function ssrApiGet<T>(request: Request, path: string): Promise<T> {
+export async function ssrApiGet<T>(
+  request: Request,
+  path: string,
+  env?: SsrRuntimeEnv,
+): Promise<T> {
   const headers: Record<string, string> = {};
   const cookie = request.headers.get("Cookie");
   if (cookie) headers.Cookie = cookie;
+
+  // Forward Cloudflare Access headers from the inbound request to the
+  // worker. Critical when going through the service binding: a binding
+  // fetch bypasses the public edge, so Access headers Cloudflare would
+  // normally inject AT the edge (CF-Access-Jwt-Assertion etc.) aren't
+  // re-added on the binding hop. The Pages SSR request itself DID
+  // traverse Access, so these headers are present on `request`; we
+  // forward them so the worker's auth middleware sees the same view it
+  // would on a direct browser → worker call.
+  const accessHeaders = ["CF-Access-Jwt-Assertion", "Cf-Access-Authenticated-User-Email"];
+  for (const name of accessHeaders) {
+    const value = request.headers.get(name);
+    if (value !== null) headers[name] = value;
+  }
 
   // Local-dev: the browser-side fetch adds X-Local-Dev-Email from
   // PUBLIC_LOOMWIKI_DEV_EMAIL, but SSR's first hop has no browser to
@@ -52,13 +93,19 @@ export async function ssrApiGet<T>(request: Request, path: string): Promise<T> {
       headers["X-Local-Dev-Email"] = ssrDevEmail;
     }
   }
-  // Astro's request URL is the page URL; its Vite proxy rewrites /api/*
-  // to the worker. Use the same origin so the proxy fires.
+
+  // Build the absolute URL. Service-binding fetches still require a
+  // valid URL even though routing skips DNS — the worker reads
+  // `request.url` and Hono routes off the path.
   const origin = new URL(request.url).origin;
-  const res = await fetch(`${origin}${path}`, {
-    method: "GET",
-    headers,
-  });
+  const fetchUrl = `${origin}${path}`;
+  const fetchRequest = new Request(fetchUrl, { method: "GET", headers });
+
+  // Service binding short-circuit. When Pages declares the API binding,
+  // the call goes worker-to-worker without traversing the public edge —
+  // bypasses the same-host loopback gotcha that returns 404 from Pages
+  // for `/api/*` paths.
+  const res = env?.API ? await env.API.fetch(fetchRequest) : await fetch(fetchRequest);
 
   if (res.status === 401) throw new SsrAuthRequiredError();
 
