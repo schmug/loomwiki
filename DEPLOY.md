@@ -119,8 +119,12 @@ wrangler secret put AI_GATEWAY_TOKEN
 ### 5. Deploy
 
 ```sh
-pnpm deploy
+pnpm deploy:worker
 ```
+
+(Note: `pnpm deploy` without `run` collides with pnpm's built-in
+"deploy a workspace package" command. Use `deploy:worker` /
+`deploy:web` / `deploy:all` — the colon disambiguates.)
 
 ## Local development
 
@@ -720,8 +724,10 @@ In the dashboard: **Workers & Pages → loomwiki-web → Custom domains → Add 
 
 ```sh
 pnpm migrate:remote          # D1 migrations 0001–0003
-pnpm deploy                  # worker (loomwiki-api) — claims the /api/* route
+pnpm deploy:worker           # worker (loomwiki-api) — claims the /api/* route
 pnpm deploy:web              # Pages (loomwiki-web) — astro build + wrangler pages deploy
+# or both:
+pnpm deploy:all
 ```
 
 Verify:

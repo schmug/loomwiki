@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Cloudflare Pages deploy config for `@loomwiki/web` (Astro SSR).
+//
+// Single-domain deployment pattern (DEPLOY.md §dogfood): Pages serves
+// `loomwiki.cortech.online/*`; the API worker (`loomwiki-api`)
+// handles `/api/*` on the same hostname via a Workers route. The
+// SSR pages call `/api/me` etc. server-side; on Cloudflare Pages a
+// same-host fetch loops back into the Pages runtime instead of going
+// through the public edge, so the Worker route never fires and Pages
+// returns 404.
+//
+// Fix: a Pages → Worker service binding. The Pages SSR helper
+// (`apps/web/src/lib/ssr-api.ts`) prefers `env.API.fetch(...)` over
+// the bare-fetch fallback, which lands the request directly in the
+// API worker without traversing DNS or the edge.
+//
+// Operator alternative: declaring the binding via the Cloudflare
+// dashboard (Pages project → Settings → Functions → Service bindings)
+// has the same effect at runtime. This file is the source-controlled
+// way to keep the binding alongside the code.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "loomwiki-web",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": "./dist",
+  "services": [
+    // Bind the API worker so SSR can invoke it without going through
+    // the public edge (avoids the Pages same-host loopback gotcha).
+    // Variable name `API` matches the lookup in ssr-api.ts.
+    { "binding": "API", "service": "loomwiki-api" }
+  ]
+}
