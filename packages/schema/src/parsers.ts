@@ -10,6 +10,7 @@
 import { ErrorCodes, LoomwikiError } from "@loomwiki/shared";
 import type { infer as ZodInfer, ZodTypeAny } from "zod";
 import {
+  AuditLogRowSchema,
   IngestRunRowSchema,
   LlmUsageRowSchema,
   MessageRowSchema,
@@ -20,6 +21,7 @@ import {
   type WikiPageFrontmatter,
   WikiPageFrontmatterSchema,
   WorkspaceRowSchema,
+  WorkspaceSettingsRowSchema,
 } from "./index.js";
 
 function parseRow<S extends ZodTypeAny>(schema: S, row: unknown, table: string): ZodInfer<S> {
@@ -43,6 +45,9 @@ export const parseLlmUsageRow = (row: unknown) =>
   parseRow(LlmUsageRowSchema, row, "llm_usage_daily");
 export const parseIngestRunRow = (row: unknown) => parseRow(IngestRunRowSchema, row, "ingest_runs");
 export const parseProposalRow = (row: unknown) => parseRow(ProposalRowSchema, row, "proposals");
+export const parseAuditLogRow = (row: unknown) => parseRow(AuditLogRowSchema, row, "audit_log");
+export const parseWorkspaceSettingsRow = (row: unknown) =>
+  parseRow(WorkspaceSettingsRowSchema, row, "workspace_settings");
 
 /**
  * Parse a Zod-validated wiki frontmatter object. Caller hands in an
@@ -65,7 +70,17 @@ export function parseWikiFrontmatter(value: unknown): WikiPageFrontmatter {
 export type {
   AskCitation,
   AskRequest,
+  AuditAction,
+  AuditLogEntry,
+  AuditLogRow,
+  AuditResourceKind,
+  ByokProvider,
+  BYOKKeyMetadata,
   IngestAgentResponse,
+  SetBYOKKeyRequest,
+  UpdateAgentsMdRequest,
+  UpdateWorkspaceSettingsRequest,
+  WorkspaceSettingsRow,
   IngestProposal,
   IngestProposalSource,
   IngestRunRow,

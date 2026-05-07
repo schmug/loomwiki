@@ -100,6 +100,35 @@ async function api<T>(path: string, init: { method?: string; body?: unknown } = 
   );
 }
 
+// Lower-level helper for endpoints where we need access to the raw Response
+// (status code, headers) rather than the unwrapped ApiOk<T>.data payload.
+// Used by the M8 negative tests that assert on X-Request-Id and the
+// status code of an intentional 404.
+async function apiRaw(
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<{ res: Response; text: string; json: unknown }> {
+  const headers = { ...HEADERS };
+  let body: BodyInit | undefined;
+  if (init.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(init.body);
+  }
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: init.method ?? "GET",
+    headers,
+    body,
+  });
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // tolerated — empty bodies on 204, etc.
+  }
+  return { res, text, json };
+}
+
 async function step<T>(label: string, fn: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
   try {
@@ -213,6 +242,96 @@ async function main(): Promise<void> {
       method: "POST",
     }),
   );
+
+  // ── M8 release-readiness extensions ───────────────────────────────────
+
+  // BYOK round-trip — PUT a fake key, GET metadata (no plaintext), DELETE,
+  // confirm gone. The key string is obviously invalid so even if envelope
+  // encryption is mis-wired and it leaks, no real credential is exposed.
+  await step("BYOK round-trip (anthropic)", async () => {
+    const put = await api<{ has_key: boolean; provider: string }>("/api/settings/byok/anthropic", {
+      method: "PUT",
+      body: { key: "sk-ant-smoke-test-do-not-use-in-prod" },
+    });
+    if (put.has_key !== true || put.provider !== "anthropic") {
+      throw new Error(`PUT byok shape mismatch: ${JSON.stringify(put)}`);
+    }
+
+    const meta = await api<{ providers: Array<{ provider: string; has_key: boolean }> }>(
+      "/api/settings/byok",
+    );
+    const ant = meta.providers?.find((p) => p.provider === "anthropic");
+    if (ant === undefined || ant.has_key !== true) {
+      throw new Error(`GET byok did not list anthropic with has_key=true: ${JSON.stringify(meta)}`);
+    }
+    // Defense in depth: assert no plaintext smuggled out.
+    const metaText = JSON.stringify(meta);
+    if (metaText.includes("sk-ant-smoke-test-do-not-use-in-prod")) {
+      throw new Error("BYOK metadata response leaked the plaintext key");
+    }
+
+    await api<{ deleted: boolean }>("/api/settings/byok/anthropic", { method: "DELETE" });
+
+    const after = await api<{ providers: Array<{ provider: string; has_key: boolean }> }>(
+      "/api/settings/byok",
+    );
+    const stillThere = after.providers?.find((p) => p.provider === "anthropic" && p.has_key);
+    if (stillThere !== undefined) {
+      throw new Error(`BYOK delete did not remove anthropic key: ${JSON.stringify(after)}`);
+    }
+  });
+
+  // Audit-log assertion — the manual_ingest.trigger we did earlier should
+  // have surfaced an audit row keyed by the same run_id, with a
+  // created_at within the last few seconds.
+  await step("audit log includes recent manual_ingest.trigger", async () => {
+    const NOW_S = Math.floor(Date.now() / 1000);
+    const list = await api<{
+      entries: Array<{
+        action: string;
+        created_at: number;
+        details?: Record<string, unknown> | null;
+      }>;
+    }>("/api/_admin/audit?action=manual_ingest.trigger&limit=5");
+    const recent = list.entries.filter((e) => NOW_S - e.created_at <= 60);
+    if (recent.length === 0) {
+      throw new Error(
+        `no manual_ingest.trigger audit entries in last 60s (entries=${JSON.stringify(list.entries)})`,
+      );
+    }
+    // Ideally one of them references our run_id, but we don't gate on it
+    // because the audit-row schema for the details blob isn't load-bearing
+    // for this assertion — the timing match is.
+    const matchedRun = recent.some(
+      (e) =>
+        e.details !== undefined &&
+        e.details !== null &&
+        typeof (e.details as Record<string, unknown>).run_id === "string" &&
+        (e.details as Record<string, unknown>).run_id === triggered.run_id,
+    );
+    console.log(`  recent=${recent.length} matched-run=${matchedRun}`);
+  });
+
+  // Sentry attestation — deliberately hit an invalid provider on the
+  // BYOK delete endpoint; assert the error response carries a request id
+  // (the X-Request-Id header is the contract Sentry / log dashboards key
+  // off of). We don't ping Sentry directly from CI; we just verify the
+  // worker is propagating a trace handle.
+  await step("error responses carry X-Request-Id", async () => {
+    const { res, json } = await apiRaw("/api/settings/byok/cohere", { method: "DELETE" });
+    if (res.status === 200) {
+      throw new Error(
+        "expected non-200 from DELETE /api/settings/byok/cohere (invalid provider), got 200",
+      );
+    }
+    const reqId = res.headers.get("x-request-id");
+    if (reqId === null || reqId.trim() === "") {
+      throw new Error(
+        `missing X-Request-Id header on error response (status=${res.status} body=${JSON.stringify(json).slice(0, 200)})`,
+      );
+    }
+    console.log(`  status=${res.status} x-request-id=${reqId}`);
+  });
 
   console.log("\nSmoke complete.");
 }

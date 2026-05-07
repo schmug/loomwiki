@@ -42,3 +42,14 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # M8 release-readiness guards — catch the categories of footguns
+      # that bit the cortech.online dogfood deploy in PR #24.
+      - name: Lint wrangler.jsonc
+        run: pnpm exec tsx scripts/lint-wrangler.ts
+
+      - name: Lint deploy scripts
+        run: pnpm exec tsx scripts/lint-deploy-scripts.ts
+
+      - name: Lint wrangler devDep
+        run: pnpm exec tsx scripts/lint-wrangler-devdep.ts

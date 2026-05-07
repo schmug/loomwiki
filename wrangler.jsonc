@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Loomwiki worker config. SPEC §5 — declare every binding up front, even when a
-// milestone does not consume it yet. Placeholder IDs ("<TBD>") are filled in
-// during M1 deploy via:
+// milestone does not consume it yet. Placeholder IDs (the literal token
+// T-B-D wrapped in angle brackets) are filled in during M1 deploy via:
 //   wrangler d1 create loomwiki
 //   wrangler kv namespace create CACHE
 //

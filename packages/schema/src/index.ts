@@ -417,3 +417,186 @@ export const IngestAgentResponseSchema = z
   })
   .strict();
 export type IngestAgentResponse = z.infer<typeof IngestAgentResponseSchema>;
+
+// ---------- M8: BYOK metadata, workspace settings, audit log ----------
+
+export const ByokProviderSchema = z.enum(["anthropic", "openai", "google"]);
+export type ByokProvider = z.infer<typeof ByokProviderSchema>;
+
+// v0.0.1 surfaces only Anthropic + OpenAI in the settings UI; Google is
+// reserved in the enum (and the M1 schema's CHECK) but the UI won't
+// offer it until a default model is wired. The provider-resolver in
+// lib/llm.ts maps by model-name prefix.
+export const BYOK_UI_PROVIDERS = ["anthropic", "openai"] as const;
+
+/**
+ * Public-API representation of a stored BYOK key. The plaintext key
+ * never leaves the worker — the metadata is the entire shape returned
+ * by GET /api/settings/byok.
+ */
+export const BYOKKeyMetadataSchema = z.object({
+  workspace_id: Uuidv7Schema,
+  provider: ByokProviderSchema,
+  has_key: z.boolean(),
+  created_at: EpochSeconds,
+  created_by: Uuidv7Schema,
+  last_used_at: EpochSeconds.nullable(),
+});
+export type BYOKKeyMetadata = z.infer<typeof BYOKKeyMetadataSchema>;
+
+/**
+ * Body of `PUT /api/settings/byok/:provider`. The plaintext `key` lives
+ * in memory only for the duration of the request; the response carries
+ * metadata, never the key.
+ */
+export const SetBYOKKeyRequestSchema = z.object({
+  key: z.string().min(8).max(2048),
+});
+export type SetBYOKKeyRequest = z.infer<typeof SetBYOKKeyRequestSchema>;
+
+/**
+ * D1 row schema for `workspace_settings`. Strict — extra keys reject so
+ * future migrations that add columns force the parser to be updated
+ * before the runtime sees them.
+ */
+export const WorkspaceSettingsRowSchema = z.object({
+  workspace_id: Uuidv7Schema,
+  timezone: z.string().min(1).max(64),
+  default_model: z.string().min(1).max(120),
+  updated_at: EpochSeconds,
+  updated_by: Uuidv7Schema.nullable(),
+});
+export type WorkspaceSettingsRow = z.infer<typeof WorkspaceSettingsRowSchema>;
+
+// IANA timezone allowlist for v0.0.1. Bundled list of ~40 common zones
+// — the dropdown is a small UX surface and a full IANA database is
+// overkill. Operators can extend by editing this list (and the test).
+// "UTC" is the fallback default.
+export const COMMON_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Phoenix",
+  "America/Toronto",
+  "America/Vancouver",
+  "America/Mexico_City",
+  "America/Sao_Paulo",
+  "America/Argentina/Buenos_Aires",
+  "Europe/London",
+  "Europe/Dublin",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Amsterdam",
+  "Europe/Madrid",
+  "Europe/Rome",
+  "Europe/Stockholm",
+  "Europe/Helsinki",
+  "Europe/Athens",
+  "Europe/Istanbul",
+  "Europe/Moscow",
+  "Africa/Cairo",
+  "Africa/Johannesburg",
+  "Africa/Lagos",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Karachi",
+  "Asia/Bangkok",
+  "Asia/Singapore",
+  "Asia/Hong_Kong",
+  "Asia/Shanghai",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Asia/Manila",
+  "Australia/Perth",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+] as const;
+
+const TimezoneSchema = z.enum(COMMON_TIMEZONES);
+
+// Default LLM model IDs the UI offers. Workers AI ids prefixed with
+// `@cf/`; BYOK options carry a `byok:<provider>` sentinel that the
+// runtime resolves at chat-time. Explicit allowlist keeps a typo'd
+// model from reaching env.AI.run().
+export const SUPPORTED_DEFAULT_MODELS = [
+  "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "@cf/meta/llama-3-70b-instruct",
+  "@cf/meta/llama-3.1-8b-instruct-fast",
+  "byok:anthropic",
+  "byok:openai",
+] as const;
+const DefaultModelSchema = z.enum(SUPPORTED_DEFAULT_MODELS);
+
+export const UpdateWorkspaceSettingsRequestSchema = z
+  .object({
+    timezone: TimezoneSchema,
+    default_model: DefaultModelSchema,
+  })
+  .strict();
+export type UpdateWorkspaceSettingsRequest = z.infer<typeof UpdateWorkspaceSettingsRequestSchema>;
+
+export const UpdateAgentsMdRequestSchema = z
+  .object({
+    content: z
+      .string()
+      .min(1)
+      .max(64 * 1024),
+    // Server-side enforcement of the AGENTS.md confirmation dialog.
+    // The web UI shows a confirm dialog and only sends `confirmed: true`
+    // on user click. A request without the flag rejects with 400.
+    confirmed: z.literal(true),
+  })
+  .strict();
+export type UpdateAgentsMdRequest = z.infer<typeof UpdateAgentsMdRequestSchema>;
+
+// ---------- Audit log ----------
+
+export const AuditActionSchema = z.enum([
+  "proposal.merge",
+  "proposal.reject",
+  "byok.create",
+  "byok.delete",
+  "agentsmd.update",
+  "workspace_settings.update",
+  "manual_ingest.trigger",
+]);
+export type AuditAction = z.infer<typeof AuditActionSchema>;
+
+export const AuditResourceKindSchema = z.enum([
+  "proposal",
+  "byok",
+  "agentsmd",
+  "workspace_settings",
+  "ingest",
+]);
+export type AuditResourceKind = z.infer<typeof AuditResourceKindSchema>;
+
+// 4 KB cap per snapshot — enforced in lib/audit.ts at write time, but
+// also expressed in the schema so a hand-crafted INSERT can't sneak a
+// larger blob past parsing.
+export const AUDIT_SNAPSHOT_MAX_BYTES = 4 * 1024;
+
+export const AuditLogRowSchema = z.object({
+  id: Uuidv7Schema,
+  workspace_id: Uuidv7Schema,
+  actor_user_id: Uuidv7Schema.nullable(),
+  action: AuditActionSchema,
+  resource_kind: AuditResourceKindSchema,
+  resource_id: z.string().max(128).nullable(),
+  before_json: z.string().max(AUDIT_SNAPSHOT_MAX_BYTES).nullable(),
+  after_json: z.string().max(AUDIT_SNAPSHOT_MAX_BYTES).nullable(),
+  request_id: z.string().max(64).nullable(),
+  created_at: EpochSeconds,
+});
+export type AuditLogRow = z.infer<typeof AuditLogRowSchema>;
+
+// Public API shape — same fields, the worker serializer just doesn't
+// repeat the row schema name. Kept distinct for forward-compatibility:
+// when v0.1 adds a "diff" computed field, it lands in the API shape
+// without changing the on-disk row schema.
+export const AuditLogEntrySchema = AuditLogRowSchema;
+export type AuditLogEntry = z.infer<typeof AuditLogEntrySchema>;

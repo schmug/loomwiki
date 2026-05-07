@@ -99,6 +99,11 @@ export interface Env {
   // Default 100/day; tune via wrangler vars.
   INGEST_DAILY_LIMIT_PER_WORKSPACE?: string;
 
+  // M8: deploy-time default for the workspace_settings.timezone column
+  // when a workspace hasn't customized it via /settings/workspace yet.
+  // Optional — falls back to "UTC" in lib/workspace-settings.ts.
+  WORKSPACE_DEFAULT_TIMEZONE?: string;
+
   // Secrets — undefined locally unless set via .dev.vars
   SENTRY_DSN?: string;
   BYOK_ENCRYPTION_KEY?: string;

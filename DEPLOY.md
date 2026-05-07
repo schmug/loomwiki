@@ -780,3 +780,270 @@ Output is a stepwise log; non-zero exit means the run failed (e.g. ingest run ca
 Chat messages can be soft-deleted from D1 and the live DO. They cannot be
 removed from the Artifacts repo (the wiki + chat-log committed history is
 git, immutable by design). This is documented in `docs/SECURITY.md` §M25.
+
+## Sentry setup (M8)
+
+Loomwiki captures unhandled exceptions to Sentry via the minimal
+envelope sender in `apps/worker/src/lib/sentry.ts` (ADR-0008). One
+secret to set:
+
+```sh
+wrangler secret put SENTRY_DSN
+# paste the full DSN: https://<key>@<org>.ingest.us.sentry.io/<project_id>
+```
+
+The DSN format is the standard Sentry shape:
+
+- `<key>` — the public key from Sentry → Settings → Projects →
+  *your project* → Client Keys (DSN).
+- `<org>.ingest.us.sentry.io` — the Sentry-managed ingest host.
+  Self-hosted Sentry users substitute their own ingest host.
+- `<project_id>` — the numeric project id from the same DSN page.
+
+**Without `SENTRY_DSN` set, capture is a no-op** — the worker
+detects the unset DSN at every `captureException` call and returns
+without making the network request. Local dev, tests, and self-
+hosters who don't run Sentry all work without the secret.
+
+To verify the wire is up after deploy: trigger any 500 path
+(intentionally — the simplest is a malformed query against an
+admin route as the workspace owner) and confirm a fresh event
+appears in Sentry within ~30 seconds, tagged with `request_id` and
+the deployed release SHA.
+
+PII scrubbing runs unconditionally on every event: `email`,
+`displayName`, `api_key`, `token`, `password`, `authorization`,
+`workspace_id` field names are stripped; email-shaped strings are
+redacted. The scrub function (`scrubPII` in `lib/sentry.ts`) is
+defense-in-depth; the primary defense is that BYOK plaintext keys
+never reach the logger in the first place (ADR-0006).
+
+To disable Sentry without touching the secret:
+`wrangler secret delete SENTRY_DSN`.
+
+## Workers Logs verification
+
+Loomwiki uses Cloudflare Workers Logs as the primary log surface
+(structured JSON lines, queryable via the dashboard). M8's
+`wrangler.jsonc` should have:
+
+```jsonc
+"observability": {
+  "enabled": true,
+  "head_sampling_rate": 1.0
+}
+```
+
+`head_sampling_rate: 1.0` means every request is sampled — at
+v0.0.1's traffic level there's no reason to drop logs. Reduce to
+`0.1` or below if log volume becomes a cost concern.
+
+To verify logs are flowing: dashboard → **Workers & Pages →
+loomwiki-api → Logs (Beta)**. Filter on a recent timestamp and
+confirm structured lines for the last few requests appear. The
+`event:` field is the load-bearing tag for grep — common values:
+`archive_run_complete` (M5), `ingest_scan_complete` (M7),
+`request_complete` (Hono per-request log).
+
+For a quick CLI tail:
+
+```sh
+wrangler tail --format pretty
+```
+
+`wrangler tail` is a development convenience; the dashboard Logs
+view is the canonical operator surface.
+
+## Audit log queries
+
+The audit log (M8 / ADR-0007) records workspace-owner-only actions
+to D1. Reads are JSON-only in v0.0.1 — either via the
+`GET /api/_admin/audit?since=&limit=&action=` route (workspace-
+owner-only) or via direct D1 SQL.
+
+Sample queries via wrangler:
+
+```sh
+# Most recent 20 audit entries:
+wrangler d1 execute loomwiki --remote \
+  --command "SELECT action, resource_kind, resource_id, created_at
+             FROM audit_log
+             ORDER BY created_at DESC LIMIT 20"
+
+# All proposal merges in the last 7 days:
+wrangler d1 execute loomwiki --remote \
+  --command "SELECT id, actor_user_id, resource_id, created_at
+             FROM audit_log
+             WHERE action = 'proposal.merge'
+               AND created_at > unixepoch() - 7*86400
+             ORDER BY created_at DESC"
+
+# Snapshot inspection (single row, full payload):
+wrangler d1 execute loomwiki --remote \
+  --command "SELECT before_json, after_json
+             FROM audit_log
+             WHERE id = '<paste-id-here>'"
+```
+
+The `before_json` / `after_json` columns are 4 KB-truncated JSON
+snapshots; truncated payloads carry `_truncated: true` and a
+`prefix` field. The action enum is one of:
+`proposal.merge | proposal.reject | byok.create | byok.delete |
+agentsmd.update | workspace_settings.update | manual_ingest.trigger`.
+
+The web UI viewer is a v0.1 deliverable — `docs/RELEASE.md`
+"Roadmap to v0.1" tracks it.
+
+## Post-deploy verifier setup
+
+The post-deploy verifier (`pnpm smoke:live` invoked from CI on
+deploy-success) hits the live deploy with a Cloudflare Access
+service token and exercises the M7 happy path end-to-end. Two
+GitHub repo secrets are required:
+
+- `CF_ACCESS_CLIENT_ID` — the client id of the Access service token
+  attached to the dogfood deploy's "Service Auth" policy.
+- `CF_ACCESS_CLIENT_SECRET` — the client secret. Sentinel value:
+  this is shown **once** in the Cloudflare dashboard at service-
+  token creation; copy it immediately.
+
+Configure both at GitHub repo → **Settings → Secrets and variables
+→ Actions → New repository secret**. The secrets must be at the
+repository scope (not environment-scoped), since the verifier runs
+on every deploy regardless of environment.
+
+Service-token provisioning lives in the Cloudflare dashboard:
+**Zero Trust → Access → Service Auth → Create Service Token**.
+Name the token (e.g. `loomwiki-claude-smoke`). Attach the token to
+a Policy with **Action = Service Auth** on the deploy's Access
+application — never Action = Allow, which lets human-authenticated
+users through. See the dogfood deploy section §5 above for the
+full flow.
+
+The verifier also expects:
+
+- `LOOMWIKI_BASE_URL` — the public hostname of the deploy
+  (`https://loomwiki.cortech.online` for the reference deploy).
+  Configured as a repo variable, not a secret.
+
+To run the verifier locally with the same secrets:
+
+```sh
+export CF_ACCESS_CLIENT_ID="<token client id>"
+export CF_ACCESS_CLIENT_SECRET="<token client secret>"
+export LOOMWIKI_BASE_URL="https://loomwiki.cortech.online"
+pnpm smoke:live
+```
+
+A non-zero exit code means the run failed. The script logs each
+step inline; the failure mode is usually visible in the last few
+lines.
+
+The smoke caveat from the dogfood section applies: the service
+token's user identity must match the workspace owner for admin
+routes (e.g. `/api/_admin/digest/render`) to authorize. v0.0.1's
+single-tenant model assigns ownership to the first user that hits
+`/api/me` — see the dogfood section's smoke caveats for the full
+detail.
+
+## `BYOK_ENCRYPTION_KEY` rotation runbook
+
+`BYOK_ENCRYPTION_KEY` is the master key for envelope-encrypting the
+workspace's BYOK provider keys (`apps/worker/src/lib/crypto.ts`,
+ADR-0006). Rotation is rare (operator-driven, on key compromise or
+on policy) and is **manual in v0.0.1** — automation is a v0.1
+deliverable.
+
+The rotation procedure is a single sit-down, ~15 minutes:
+
+### 1. Generate a new master key
+
+```sh
+NEW_KEY=$(openssl rand -base64 32)
+echo "$NEW_KEY" | wc -c   # expect 45 (44 chars + newline)
+# Save NEW_KEY somewhere safe for the moment — not in the repo.
+```
+
+### 2. Read every `byok_keys` row
+
+```sh
+wrangler d1 execute loomwiki --remote --json \
+  --command "SELECT workspace_id, provider, hex(ciphertext) AS ct_hex,
+                    hex(iv) AS iv_hex, created_at, created_by, last_used_at
+             FROM byok_keys" \
+  > /tmp/byok-rows.json
+```
+
+The hex encoding makes the binary columns shell-safe. Inspect the
+output to confirm the row count matches what you expect (one row
+per `(workspace, provider)` pair, including soft-deleted rows
+which show a single `00` byte for `ct_hex`).
+
+### 3. Decrypt with the old key, re-encrypt with the new key
+
+This step is operator-supplied — there is no v0.0.1 admin route for
+it. The minimal recipe is a one-off Node script using
+`@loomwiki/worker`'s `decryptValue` / `encryptValue`:
+
+```ts
+// rotate-byok.mjs (run from repo root with the OLD master key in
+// the env).  Reads /tmp/byok-rows.json, writes /tmp/byok-update.sql
+// with one UPDATE per row using the NEW master key.
+import { decryptValue, encryptValue } from "./apps/worker/src/lib/crypto.js";
+
+const OLD = process.env.BYOK_ENCRYPTION_KEY_OLD;
+const NEW = process.env.BYOK_ENCRYPTION_KEY_NEW;
+const rows = JSON.parse(fs.readFileSync("/tmp/byok-rows.json"));
+
+for (const row of rows[0].results) {
+  if (row.ct_hex === "00") continue;            // soft-deleted, skip
+  const ct = Buffer.from(row.ct_hex, "hex");
+  const iv = Buffer.from(row.iv_hex, "hex");
+  const plain = await decryptValue(ct, iv, OLD);
+  const { ciphertext, iv: newIv } = await encryptValue(plain, NEW);
+  // Write UPDATE with hex literals (D1 accepts X'...' for blobs).
+  console.log(`UPDATE byok_keys SET ciphertext = X'${Buffer.from(ciphertext).toString("hex")}', iv = X'${Buffer.from(newIv).toString("hex")}' WHERE workspace_id = '${row.workspace_id}' AND provider = '${row.provider}';`);
+}
+```
+
+(Save your output, do not commit the script.)
+
+### 4. Apply the UPDATEs
+
+```sh
+wrangler d1 execute loomwiki --remote --file /tmp/byok-update.sql
+```
+
+### 5. Set the new master key as the Worker secret
+
+```sh
+echo "$NEW_KEY" | wrangler secret put BYOK_ENCRYPTION_KEY
+```
+
+The `wrangler secret put` overwrites the prior value atomically.
+The next `getBYOK` call in any isolate uses the new key against
+the freshly re-encrypted ciphertexts.
+
+### 6. Verify
+
+Either trigger an `/ask` from a workspace with BYOK configured, or
+run `pnpm smoke:live`. A `BYOK_DECRYPT_FAILED` error in Sentry or
+the smoke output indicates a row was missed in step 3 — re-run
+steps 2–4 for that row's workspace_id.
+
+### Rollback
+
+If step 4 partially applied: keep the OLD secret value, restore the
+prior `byok_keys` rows from a D1 snapshot (`wrangler d1 backup
+list`), and start over. The `byok_keys` table is small and a
+backup-restore is fast.
+
+**Do not delete the OLD master key value until step 6 verifies
+end-to-end.** Keep it for at least one cycle in case a stale
+isolate is somehow holding the old `BYOK_ENCRYPTION_KEY` value
+(this should not happen — Workers Secrets reads at request time —
+but the contingency cost of holding the old key for a day is
+zero).
+
+Automation of this runbook is tracked as a v0.1 deliverable. See
+`docs/RELEASE.md` "Roadmap to v0.1."

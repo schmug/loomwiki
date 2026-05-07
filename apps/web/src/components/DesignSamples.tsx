@@ -211,6 +211,55 @@ export function DesignSamples({ mode }: DesignSamplesProps) {
       <Separator />
 
       <section className="space-y-3">
+        <p className="text-xs font-medium uppercase text-muted-foreground">
+          Settings — tab nav + BYOK row
+        </p>
+        <nav aria-label="Settings sample" className="flex border-b border-border">
+          <span className="flex-1 bg-background px-3 py-2 text-center text-sm font-medium text-foreground">
+            BYOK
+          </span>
+          <span className="flex-1 px-3 py-2 text-center text-sm font-medium text-muted-foreground">
+            AGENTS.md
+          </span>
+          <span className="flex-1 px-3 py-2 text-center text-sm font-medium text-muted-foreground">
+            Workspace
+          </span>
+        </nav>
+        <ul className="divide-y divide-border rounded-md border border-border">
+          <li className="flex items-start justify-between gap-3 p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Anthropic (Claude)</p>
+              <p className="text-xs text-muted-foreground">
+                Configured: yes · Created: 2d ago · Last used: 17m ago
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button size="sm" variant="outline">
+                Replace key
+              </Button>
+              <Button size="sm" variant="destructive">
+                Remove
+              </Button>
+            </div>
+          </li>
+          <li className="flex items-start justify-between gap-3 p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">OpenAI</p>
+              <p className="text-xs text-muted-foreground">Configured: no</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button size="sm">Add key</Button>
+            </div>
+          </li>
+        </ul>
+        <output className="block rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:border-emerald-700/50 dark:bg-emerald-950/30">
+          Saved. The key is encrypted at rest. We will never display it again.
+        </output>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
         <p className="text-xs font-medium uppercase text-muted-foreground">Search empty states</p>
         <div className="rounded-md border border-border">
           <p className="border-b border-border bg-secondary/30 px-3 py-1 text-[11px] uppercase text-muted-foreground">

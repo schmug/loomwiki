@@ -1,0 +1,54 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// BYOK keys settings page. Owner-only.
+
+import AppShell from "@/components/AppShell.astro";
+import { BYOKSettings } from "@/components/settings/BYOKSettings";
+import SettingsTabs from "@/components/settings/SettingsTabs.astro";
+import Layout from "@/layouts/Layout.astro";
+import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+
+const env = Astro.locals.runtime?.env;
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+const isOwner = me.workspace.owner_id === me.user.id;
+---
+
+<Layout title={`Settings — ${me.workspace.name}`}>
+  <AppShell
+    workspaceName={me.workspace.name}
+    userDisplayName={me.user.display_name}
+    isOwner={isOwner}
+  >
+    <div slot="sidebar" class="p-4 text-xs text-muted-foreground">
+      <p class="font-medium text-foreground">Settings</p>
+      <p class="mt-1">Workspace administration. Owner only.</p>
+    </div>
+    <div slot="main" class="flex h-full min-h-0 flex-col">
+      <SettingsTabs active="byok" />
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        {
+          isOwner ? (
+            <BYOKSettings client:load />
+          ) : (
+            <div class="grid h-full place-items-center p-8 text-center">
+              <div class="space-y-2 max-w-md">
+                <h2 class="text-lg font-semibold">Owner only</h2>
+                <p class="text-sm text-muted-foreground">
+                  Settings are managed by the workspace owner.
+                </p>
+              </div>
+            </div>
+          )
+        }
+      </div>
+    </div>
+  </AppShell>
+</Layout>

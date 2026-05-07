@@ -336,3 +336,94 @@ Tracked as a follow-up — the M7 prompt's "Things to surface" list
 includes ⌘K command-palette integration; deferred. Operators trigger
 manually via `curl POST /api/rooms/:rid/ingest` for now (see
 `DEPLOY.md` for the smoke recipe).
+
+## Settings (M8)
+
+The owner-only `/settings` surface ships in M8 across three
+sub-pages: BYOK key management (`/settings/byok`), workspace
+defaults (`/settings/workspace`), and AGENTS.md editing
+(`/settings/agents-md`). Four conventions are load-bearing — keep
+them in mind when adding new owner-only surfaces.
+
+### Hydration: `client:load` for owner-only surfaces
+
+Settings pages all hydrate `client:load`. Save buttons, confirmation
+dialogs, and the BYOK textarea-clearing behavior all need to be
+live on first paint — owner-only routes are visited rarely, so the
+JS payload is amortized across few page loads, and the latency-
+sensitive shells (chat, wiki) are not gated on settings being
+interactive.
+
+| Surface | Directive | Why |
+|---|---|---|
+| `<ByokSettings>` on `/settings/byok` | `client:load` | textarea clear-on-save + provider-tab state must be live on first paint |
+| `<WorkspaceSettings>` on `/settings/workspace` | `client:load` | save button + dirty-state tracking |
+| `<AgentsMdEditor>` on `/settings/agents-md` | `client:load` | confirmation dialog flow + diff preview |
+
+### Owner-gate visibility (BOTH server and client)
+
+Owner-only must be enforced **twice**:
+
+1. **Server-side page** — the `.astro` page in `src/pages/settings/`
+   reads the SSR-fetched workspace metadata, redirects non-owners
+   to `/` with a flash message. The page never SSRs settings
+   markup for a non-owner.
+2. **AppShell tab** — the owner-only nav entry (the gear icon
+   pointing at `/settings`) renders only when the same workspace
+   metadata says `is_owner: true`. Non-owners do not see the entry
+   in the sidebar.
+
+Two layers because either alone is insufficient: an SSR-only check
+leaves the nav entry visible for a non-owner whose role flips
+mid-session (a confusing UX even when the click correctly 403s); a
+client-only check would render the sensitive form during SSR,
+which is a cache-poisoning class of bug.
+
+### BYOK plaintext-never-roundtrip
+
+The BYOK settings React component (`src/components/settings/ByokSettings.tsx`)
+honors a strict no-roundtrip rule for plaintext keys:
+
+- The textarea `value` prop is bound to local state initialized to
+  the empty string.
+- On submit, the typed value is sent to `POST /api/byok` and **the
+  local state is cleared immediately** — before the network response
+  resolves. The textarea re-renders empty.
+- The component never re-displays the typed value, even after a
+  successful save. The list view below the textarea shows
+  metadata-only (`provider`, `created_at`, `last_used_at`) from
+  `GET /api/byok` — there is no server-side surface that returns
+  the plaintext, so there's nothing to re-render.
+- On error (validation, 4xx), the textarea stays cleared. The user
+  re-pastes; this is intentional friction so a leaked key doesn't
+  linger in the DOM after a failed save.
+
+The contract pairs with `apps/worker/src/lib/byok.ts`'s plaintext-
+in-memory-only rule. See ADR-0006 for the full envelope-encryption
+design.
+
+### Confirmation flow for AGENTS.md
+
+`AGENTS.md` is privileged (`docs/SECURITY.md` §M4) — its content
+controls the ingest agent's runtime contract. The editor at
+`/settings/agents-md` enforces a two-step confirmation:
+
+1. **Edit step.** The textarea shows the current contents; the
+   header shows the `before_sha`. The Save button is disabled
+   while the textarea is unchanged.
+2. **Confirm step.** The Save button opens a modal that renders a
+   diff (using the same shared `SanitizedMarkdown` pipeline as
+   chat / wiki / proposals). The modal includes a checkbox
+   labeled "I understand this changes the agent's runtime
+   contract" — the Confirm button is disabled until the box is
+   checked.
+
+The `PUT /api/agents-md` route includes the `before_sha` and 409s
+on mismatch, just like the M4 wiki write path. On 409 the editor
+re-fetches and re-renders the diff with the updated server state;
+the user re-confirms to proceed.
+
+The confirmation flow is deliberate friction. AGENTS.md is the kind
+of surface where a one-click typo can change ingest behavior across
+every future run — the modal is there to make sure the operator
+really meant it.
