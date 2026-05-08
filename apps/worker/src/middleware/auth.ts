@@ -21,7 +21,16 @@ import { verifyAccessJwt } from "../lib/auth.js";
 import { getOrCreateUser } from "../lib/users.js";
 import { getOrBootstrapWorkspace } from "../lib/workspace.js";
 
-export type AuthVariables = { user: User; workspace: Workspace };
+export type AuthVariables = {
+  user: User;
+  workspace: Workspace;
+  // M8: stamped by requestContextMiddleware (lib/request-context.ts).
+  // Optional in the type because the middleware may not be installed
+  // upstream of every router (e.g., open routes), but in practice the
+  // Worker installs it globally. Routes that pass it to audit/sentry
+  // helpers should `?? null`.
+  request_id?: string;
+};
 export type AuthEnv = { Bindings: Env; Variables: AuthVariables };
 
 const LOCALHOST_IPS = new Set(["127.0.0.1", "::1"]);

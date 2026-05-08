@@ -21,6 +21,7 @@ import { parseProposalRow } from "@loomwiki/schema/parsers";
 import { ErrorCodes, LoomwikiError, apiOk } from "@loomwiki/shared";
 import { Hono } from "hono";
 import type { Env } from "../env.js";
+import { auditProposalMerge, auditProposalReject } from "../lib/audit.js";
 import { serializeProposal } from "../lib/serialize.js";
 import { defaultWikiBackend } from "../lib/vault-bootstrap.js";
 import { syncIndexesOnUpsert, writePage } from "../lib/wiki-write.js";
@@ -151,6 +152,7 @@ export const proposalsRoute = new Hono<AuthEnv>()
     const body = (await c.req.json().catch(() => null)) as { before_sha?: string } | null;
 
     const backend = defaultWikiBackend(c.env);
+    const beforePage = await backend.read(proposal.page_path);
     const writeResult = await writePage(backend, proposal.page_path, {
       raw: proposal.after_content,
       before_sha: body?.before_sha,
@@ -164,6 +166,32 @@ export const proposalsRoute = new Hono<AuthEnv>()
     )
       .bind(nowSec, c.var.user.id, writeResult.sha, proposal.id)
       .run();
+
+    // Best-effort audit write — never block the merge response on it.
+    c.executionCtx.waitUntil(
+      auditProposalMerge(
+        {
+          env: c.env,
+          workspaceId: c.var.workspace.id,
+          actorUserId: c.var.user.id,
+          requestId: c.var.request_id ?? null,
+        },
+        proposal.id,
+        {
+          wiki_path: proposal.page_path,
+          before_sha: beforePage?.sha ?? null,
+          before_body: beforePage?.raw ?? null,
+        },
+        {
+          wiki_path: writeResult.path,
+          after_sha: writeResult.sha,
+          after_body_len: proposal.after_content.length,
+        },
+      ).catch(() => {
+        // Audit-log absence is bad; blocking on it would be worse.
+        // Sentry middleware (M8) captures persistent failures.
+      }),
+    );
 
     return c.json(apiOk({ merged: true, page_path: writeResult.path, sha: writeResult.sha }));
   })
@@ -185,5 +213,17 @@ export const proposalsRoute = new Hono<AuthEnv>()
     )
       .bind(nowSec, c.var.user.id, proposal.id)
       .run();
+    c.executionCtx.waitUntil(
+      auditProposalReject(
+        {
+          env: c.env,
+          workspaceId: c.var.workspace.id,
+          actorUserId: c.var.user.id,
+          requestId: c.var.request_id ?? null,
+        },
+        proposal.id,
+        { wiki_path: proposal.page_path, status: "pending" },
+      ).catch(() => {}),
+    );
     return c.json(apiOk({ rejected: true, proposal_id: proposal.id }));
   });

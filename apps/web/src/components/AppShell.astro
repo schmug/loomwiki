@@ -24,15 +24,20 @@ import { InboxBadge } from "@/components/inbox/InboxBadge";
 interface Props {
   workspaceName: string;
   userDisplayName: string;
+  /** When true, renders the Settings tab. Owner-only by convention; the
+   *  Astro pages enforce the gate server-side, this prop drives the
+   *  cosmetic visibility of the link. */
+  isOwner?: boolean;
 }
 
-const { workspaceName, userDisplayName } = Astro.props;
+const { workspaceName, userDisplayName, isOwner = false } = Astro.props;
 const hasRightRail = Astro.slots.has("right-rail");
 const pathname = new URL(Astro.request.url).pathname;
 const onWiki = pathname.startsWith("/w");
 const onAsk = pathname.startsWith("/ask");
 const onInbox = pathname.startsWith("/inbox");
-const onChat = !onWiki && !onAsk && !onInbox;
+const onSettings = pathname.startsWith("/settings");
+const onChat = !onWiki && !onAsk && !onInbox && !onSettings;
 ---
 
 <style>
@@ -105,6 +110,36 @@ const onChat = !onWiki && !onAsk && !onInbox;
           <span>Inbox</span>
           <InboxBadge client:idle />
         </a>
+        {
+          isOwner && (
+            <a
+              href="/settings"
+              class:list={[
+                "flex flex-1 items-center justify-center gap-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+                onSettings
+                  ? "bg-background text-foreground"
+                  : "text-muted-foreground hover:bg-background/60",
+              ]}
+              aria-current={onSettings ? "page" : undefined}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="size-3.5"
+                aria-hidden="true"
+              >
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <span>Settings</span>
+            </a>
+          )
+        }
       </nav>
       <slot name="sidebar" />
     </aside>

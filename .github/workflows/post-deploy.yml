@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Post-deploy verifier — runs after merges to main land on
+# loomwiki.cortech.online (the M8 dogfood domain). Asserts that:
+#
+#   1. /api/health is OK, fast (<5s), and reports the SHA we just shipped.
+#   2. Security headers are present on the front door (CSP, X-Frame-Options).
+#   3. /api/me returns 200 + { user, workspace } when service-token auth is used.
+#
+# On any failure, opens a GitHub issue auto-assigned to the repo owner.
+#
+# Required repository secrets:
+#   - CF_ACCESS_CLIENT_ID
+#   - CF_ACCESS_CLIENT_SECRET
+#
+# Both are Cloudflare Access service-token credentials provisioned via the
+# Cloudflare Zero Trust dashboard (Access -> Service Auth). The smoke
+# script (scripts/smoke-live.ts) uses the same pair locally.
+
+name: post-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: post-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: live smoke (loomwiki.cortech.online)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://loomwiki.cortech.online
+      EXPECTED_SHA: ${{ github.sha }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+    steps:
+      - name: Wait for deploy to propagate
+        run: sleep 120
+
+      - name: Verify /api/health (commit + ok flag)
+        id: health
+        run: |
+          set -euo pipefail
+          BODY=$(curl -fsS --max-time 5 \
+            -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+            -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+            "${BASE_URL}/api/health")
+          echo "$BODY" | jq -e '.ok == true' > /dev/null
+          # /api/health returns ApiResult: { ok: true, data: { commit, version, status } }
+          echo "$BODY" | jq -e --arg sha "$EXPECTED_SHA" '.data.commit == $sha' > /dev/null
+
+      - name: Verify security headers (CSP, X-Frame-Options)
+        id: headers
+        run: |
+          set -euo pipefail
+          HEADERS=$(curl -fsSI --max-time 10 "${BASE_URL}/")
+          echo "$HEADERS" | grep -i '^Content-Security-Policy:' > /dev/null
+          echo "$HEADERS" | grep -i '^X-Frame-Options:[[:space:]]*DENY' > /dev/null
+
+      - name: Verify /api/me (authenticated)
+        id: me
+        run: |
+          set -euo pipefail
+          BODY=$(curl -fsS --max-time 5 \
+            -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+            -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+            "${BASE_URL}/api/me")
+          echo "$BODY" | jq -e '.data.user' > /dev/null
+          echo "$BODY" | jq -e '.data.workspace' > /dev/null
+
+      - name: File issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        with:
+          script: |
+            const { RUN_URL, OWNER, SHA } = process.env;
+            const title = `[post-deploy] Verifier failed for ${SHA}`;
+            const body = [
+              `Post-deploy verifier for commit \`${SHA}\` failed.`,
+              ``,
+              `**Run:** ${RUN_URL}`,
+              ``,
+              `Steps in \`.github/workflows/post-deploy.yml\`:`,
+              `- /api/health (200 + ok:true + matching commit, <5s)`,
+              `- Security headers (Content-Security-Policy, X-Frame-Options: DENY)`,
+              `- /api/me (200 + JSON with user + workspace fields)`,
+              ``,
+              `Inspect the run logs above to identify which step failed.`,
+              ``,
+              `_Filed automatically by the post-deploy workflow._`,
+            ].join("\n");
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              assignees: [OWNER],
+              labels: ["post-deploy", "automated"],
+            });

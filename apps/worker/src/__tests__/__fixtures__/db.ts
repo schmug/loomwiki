@@ -14,8 +14,11 @@ export async function applyMigrations(): Promise<void> {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 }
 
-// Truncate the application tables. Order respects FK references.
+// Truncate the application tables. Order respects FK references —
+// children before parents so DELETE never trips a foreign-key constraint.
 const TRUNCATE_ORDER = [
+  "audit_log",
+  "workspace_settings",
   "llm_usage_daily",
   "byok_keys",
   "proposals",

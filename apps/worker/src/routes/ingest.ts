@@ -18,6 +18,7 @@ import { Hono } from "hono";
 import { executeIngestWork } from "../agents/ingest-agent.js";
 import { acquireRunLock } from "../agents/lock.js";
 import type { Env } from "../env.js";
+import { auditManualIngest } from "../lib/audit.js";
 import type { AuthEnv } from "../middleware/auth.js";
 
 async function assertRoomMember(
@@ -83,12 +84,30 @@ export const ingestRoute = new Hono<AuthEnv>().post("/rooms/:rid/ingest", async 
 
   if (ctx?.waitUntil) {
     ctx.waitUntil(work);
+    ctx.waitUntil(
+      auditManualIngest(
+        {
+          env: c.env,
+          workspaceId: c.var.workspace.id,
+          actorUserId: c.var.user.id,
+          requestId: c.var.request_id ?? null,
+        },
+        rid,
+        lock.runId,
+      ).catch(() => {}),
+    );
   } else {
-    // No waitUntil available (test harnesses, some local dev setups).
-    // Fire-and-forget — the work still runs, but the isolate may
-    // shut down before completion. Tests that need to assert the
-    // result drive executeIngestWork directly.
     void work;
+    void auditManualIngest(
+      {
+        env: c.env,
+        workspaceId: c.var.workspace.id,
+        actorUserId: c.var.user.id,
+        requestId: c.var.request_id ?? null,
+      },
+      rid,
+      lock.runId,
+    ).catch(() => {});
   }
 
   return c.json(apiOk({ run_id: lock.runId, status: "running" }), 200);

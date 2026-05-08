@@ -4,9 +4,12 @@ import type { ExportedHandler } from "@cloudflare/workers-types";
 import { ErrorCodes, apiErr } from "@loomwiki/shared";
 import { Hono } from "hono";
 import type { Env } from "./env.js";
+import { requestContextMiddleware } from "./lib/request-context.js";
+import { sentryMiddleware } from "./lib/sentry.js";
 import { type AuthEnv, authMiddleware } from "./middleware/auth.js";
 import { registerErrorHandler } from "./middleware/error.js";
 import { debugRoute } from "./routes/_debug.js";
+import { adminAuditRoute } from "./routes/admin-audit.js";
 import { adminCronRoute } from "./routes/admin-cron.js";
 import { adminSearchRoute } from "./routes/admin-search.js";
 import { askRoute } from "./routes/ask.js";
@@ -18,6 +21,9 @@ import { proposalsRoute } from "./routes/proposals.js";
 import { roomsRoute } from "./routes/rooms.js";
 import { runsRoute } from "./routes/runs.js";
 import { searchRoute } from "./routes/search.js";
+import { agentsMdSettingsRoute } from "./routes/settings/agentsmd.js";
+import { byokSettingsRoute } from "./routes/settings/byok.js";
+import { workspaceSettingsRoute } from "./routes/settings/workspace.js";
 import { wikiRoute } from "./routes/wiki.js";
 import { workspacesRoute } from "./routes/workspaces.js";
 import { scheduled } from "./scheduled.js";
@@ -25,6 +31,14 @@ import { scheduled } from "./scheduled.js";
 export { ChatRoom } from "./do/ChatRoom.js";
 
 const app = new Hono<AuthEnv>();
+
+// M8 global middleware: stamp every request with a UUIDv7 correlation
+// id and install the Sentry onError shim. Both run before auth so they
+// see open routes too (request_id makes the smoke script's
+// X-Request-Id round-trip work for /api/health; sentry captures
+// unhandled errors from anywhere in the pipeline).
+app.use("*", requestContextMiddleware);
+app.use("*", sentryMiddleware());
 
 // Open routes (no auth required).
 app.route("/api/health", healthRoute);
@@ -50,6 +64,9 @@ app.use("/api/proposals", authMiddleware);
 app.use("/api/proposals/*", authMiddleware);
 app.use("/api/runs/*", authMiddleware);
 app.use("/api/_admin/digest/*", authMiddleware);
+// M8: settings (BYOK, AGENTS.md, workspace) + audit log read.
+app.use("/api/settings/*", authMiddleware);
+app.use("/api/_admin/audit", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -73,6 +90,11 @@ app.route("/api", ingestRoute);
 app.route("/api", runsRoute);
 app.route("/api", proposalsRoute);
 app.route("/api", digestRoute);
+// M8: settings (BYOK, AGENTS.md, workspace) + audit-log read API.
+app.route("/api/settings/byok", byokSettingsRoute);
+app.route("/api/settings/agentsmd", agentsMdSettingsRoute);
+app.route("/api/settings/workspace", workspaceSettingsRoute);
+app.route("/api", adminAuditRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),

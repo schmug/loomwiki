@@ -90,7 +90,13 @@ If the ingest agent obeys, it generates proposals to overwrite all pages. A revi
 
 **A7. Capability solicitation.** Attacker asks the agent to use a tool it doesn't have, hoping a future version's tool inventory drift exposes the agent unexpectedly.
 
-**A8. Citation laundering.** Attacker plants false claims with fabricated `sources:` frontmatter pointing at non-existent message IDs, so the page looks well-cited.
+**A8. Citation laundering.** Attacker plants false claims with fabricated `sources:` frontmatter pointing at non-existent message IDs, so the page looks well-cited. Closed in v0.0.1 by the source-citation validator (M8) plus the ingest-agent regression test in `apps/worker/src/__tests__/ingest-agent.test.ts > validateProposals (source citation)`.
+
+**A9. Reconstructed-tag injection (incomplete sanitization).** A naive single-pass HTML strip leaves nested or interleaved tag fragments (`<<script>script>`, `<scr<script>ipt>`) that the next pass — or the renderer — reassembles into a live tag. Closed in v0.0.1: `sanitizeMessageBody` in `apps/worker/src/agents/ingest-agent.ts` loops the strip until the input is stable; the regression test at `apps/worker/src/__tests__/ingest-agent.test.ts:113` ("strips nested tag fragments a single pass would leave behind (CodeQL js/incomplete-multi-character-sanitization)") asserts the invariant. Fix commit: `594ec4b fix(m7): loop HTML-tag strip until stable`.
+
+**A10. Path traversal on wiki paths.** Attacker submits `/wiki/../../etc/passwd.md`, `/wiki/foo/../AGENTS.md`, an uppercase `/wiki/DMARC.md`, or an extension other than `.md`, hoping a downstream filesystem-flavored path resolver accepts it. Closed in v0.0.1 by `validateWikiPath` in `packages/schema/src/index.ts` (regex `^/wiki/[a-z0-9][a-z0-9_/-]*\.md$` plus `_index` / `_open-questions` allowlist for top-level vault paths). Tests in `packages/schema/src/__tests__/wiki-frontmatter.test.ts > validateWikiPath` cover traversal, uppercase, and bad-extension cases.
+
+**A11. Cost runaway via repeated `/ask` (or ingest).** Attacker burns the operator's LLM budget by hammering `/ask` or `/api/rooms/:rid/ingest` from a hijacked workspace member. Closed in v0.0.1 by the three-layer cost guards (M6): per-user daily cap, per-workspace daily cap, AI Gateway hard daily cap. Implementation in `apps/worker/src/lib/cost-guard.ts` and `apps/worker/src/lib/usage.ts`; tests in `apps/worker/src/__tests__/cost-guard.test.ts`. The ingest path uses a workspace-only counter (no per-user cap, since the manual + cron triggers share the budget); see ADR-0004 §c.
 
 ### 2.2 Mitigations in v0.0.1
 
@@ -103,7 +109,7 @@ If the ingest agent obeys, it generates proposals to overwrite all pages. A revi
 | M5 | **Mandatory human review.** No auto-merge tier in v0.0.1 (Q20). Every proposal requires explicit admin click. | `apps/worker/src/routes/proposals.ts` |
 | M6 | **Diff review UI surfaces danger signals.** Highlights: net size delta > 1 KB, links to external domains, code blocks, frontmatter-only changes, paths matching sensitive patterns (`decisions/`, `glossary/`). | `apps/web/src/routes/proposals/[id].tsx` |
 | M7 | **Unicode normalization on ingest input.** All chat content NFC-normalized before LLM context build. Zero-width chars stripped. Bidi controls stripped. | `apps/worker/src/lib/text-normalize.ts` |
-| M8 | **Source-trace requirement.** Every proposal must include `sources: [{ room_id, message_id, ... }]`. Validation rejects message_ids that don't exist in D1 for that workspace. Citation laundering (A8) becomes detectable. | `apps/worker/src/lib/proposals.ts` |
+| M8 | **Source-trace requirement.** Every proposal must include `sources: [{ room_id, message_id, ... }]`. Validation rejects message_ids that don't exist in D1 for that workspace. Citation laundering (A8) becomes detectable. Covered by `apps/worker/src/__tests__/ingest-agent.test.ts > validateProposals (source citation)` — both fabricated message ids and cross-room source contamination. | `apps/worker/src/lib/proposals.ts` |
 | M9 | **Rate limiting on ingest triggers.** Per workspace: 1 ingest run per room per 5 minutes. Per workspace: 50 runs / day total. Prevents brute-force injection iteration. | `apps/worker/src/middleware/rate-limit.ts` |
 | M10 | **Output disclosure scrubbing.** Before persisting LLM-generated proposal content, scan for and reject content matching: `[A-Z0-9]{16,}` near `key`/`token`/`password` keywords, AWS access key prefix `AKIA`, JWT triple-segment shapes. False positives rejected loudly. | `apps/worker/src/lib/secret-scan.ts` |
 | M11 | **No tool use in v0.0.1.** Agent has no web fetch, no shell, no DB write, no MCP. Just read-room-history + read-existing-wiki-pages + emit-proposals. Closes A2 entirely. | architecture |
@@ -240,10 +246,11 @@ Honest list. Each is tracked as a SPEC §20 question or a GitHub issue tagged `s
 |-----|------|------|
 | No formal pen test | Unknown unknowns | Pre-v0.1 if anyone will host this beyond dogfood |
 | No SOC 2 / no compliance attestations | Cannot be used in regulated environments | Out of scope; document loudly |
-| No audit log for admin actions | A compromised admin merging proposals leaves no trail beyond Artifacts commit log | Add `audit_log` table in v0.1 |
+| ~~No audit log for admin actions~~ — **Closed in 0.0.1.** | A compromised admin merging proposals leaves no trail beyond Artifacts commit log | Closed by `packages/schema/d1-migrations/0004_audit.sql` + `apps/worker/src/lib/audit.ts`. Action taxonomy: `proposal.merge | proposal.reject | byok.create | byok.delete | agentsmd.update | workspace_settings.update | manual_ingest.trigger`. JSON-only access in v0.0.1 (`GET /api/_admin/audit`); web UI deferred to v0.1. See ADR-0007. |
 | No DLP scanning | Sensitive data committed to vault is not detected | v0.1: optional pre-commit hook in vault |
 | No SIEM integration | No SOC visibility | v0.1: Workers Analytics Engine → log push to R2 → ingest target of choice |
-| No automated dep scanning beyond Dependabot | Slow advisory pickup | Add `pnpm audit` as CI fail in v0.1 |
+| No automated dep scanning beyond Dependabot | Slow advisory pickup | **Open** — add `pnpm audit` as CI fail in v0.1. v0.0.1 ships with Dependabot only. |
+| ~~No log scrubbing for Sentry events~~ — **Closed in 0.0.1.** | Sentry event payloads could leak email / api_key / workspace_id fields | Closed by `apps/worker/src/lib/sentry.ts` `scrubPII()` — runs unconditionally on every event before transmission. Strips `email`, `displayName`, `api_key`, `token`, `password`, `authorization`, `workspace_id` field names; replaces email-shaped strings with `[redacted-email]`. See ADR-0008. |
 | No SSO directory sync | Cannot deprovision via IdP automatically | Access handles auth-time deprovisioning; data persists |
 | No E2E encryption | Cloudflare and operator can read all chat | Out of scope; competing OSS products handle this (Matrix), Loomwiki's value prop is the LLM ingest which precludes E2E |
 | Single-tenant only | No cross-workspace isolation needed in POC, so it's untested | v0.1 will need explicit workspace-scoping audit |
@@ -254,25 +261,28 @@ Honest list. Each is tracked as a SPEC §20 question or a GitHub issue tagged `s
 
 ## 12. Reporting vulnerabilities
 
-Until a `security@` address is published in `README.md`, report via:
+Two reporting channels, in priority order:
 
-1. GitHub private vulnerability advisory on the repo (preferred).
-2. Direct message to the maintainer.
+1. **Email** — `security@cortech.online`. PGP-encrypted reports welcome; the public key is published in the repo `SECURITY.md` (this file) when one is configured. Reports to this address are routed to the maintainer directly and acknowledged within the target window below.
+2. **GitHub private vulnerability advisory** on the repo. Open via the repository's "Security" tab → "Report a vulnerability." This creates a private thread visible only to the reporter and the maintainers.
 
 **Please do not file public issues for vulnerabilities.**
 
-Acknowledgement target: 72 hours. Fix target depends on severity, but no commitment beyond best-effort during POC.
+**Acknowledgement target: 72 hours** from initial report (during normal weekday hours). Fix target depends on severity; the v0.0.1 maintainer commitment is best-effort, with disclosure timing coordinated with the reporter for confirmed issues. We aim for a 90-day default disclosure window, shortenable for actively exploited issues and extendable by mutual agreement.
 
 In-scope for reporting:
 
 - The Loomwiki worker, web app, agents, schema, and vault-template.
 - Default deployment configuration (`wrangler.jsonc`, `DEPLOY.md` defaults).
+- The dogfood deployment at `loomwiki.cortech.online` (private; behind Cloudflare Access). Reports against this surface should note that it is the reference deploy, not a public-facing service.
 
 Out of scope for reporting:
 
 - Cloudflare platform vulnerabilities — report to Cloudflare via their bug bounty.
 - LLM-provider-side vulnerabilities — report to the provider.
 - Operator misconfiguration not stemming from misleading defaults — these are documentation issues, file as a normal bug.
+
+Recognition: contributors who report responsibly disclosed vulnerabilities are credited in the `docs/RELEASE.md` "Acknowledgements" section unless they request anonymity.
 
 ---
 
@@ -292,3 +302,4 @@ Out of scope for reporting:
 | Version | Date | Change |
 |---------|------|--------|
 | 0.0.1-draft | 2026-05-03 | Initial draft alongside SPEC.md |
+| 0.0.1 | 2026-05-07 | M8 release-readiness pass. Added attack scenarios A9 (reconstructed-tag, closed by `594ec4b`), A10 (path traversal, closed by `validateWikiPath`), A11 (cost runaway, closed by M6 cost guards). Closed §11 gaps "no audit log for admin actions" (`lib/audit.ts` + 0004 migration; ADR-0007) and "no log scrubbing for Sentry events" (`lib/sentry.ts` `scrubPII`; ADR-0008). Replaced §12 with `security@cortech.online` + GitHub private vulnerability advisory + 72-hour ack target. Extended A8 mitigation row M8 with the source-citation regression test path. |

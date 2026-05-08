@@ -20,7 +20,7 @@
 // is "decrypt instead of returning null", not "wire up the call".
 
 import type { Env } from "../env.js";
-import { getBYOK } from "./byok.js";
+import { getBYOK, resolveProviderForModel } from "./byok.js";
 
 export interface ChatUsage {
   prompt_tokens?: number;
@@ -141,9 +141,17 @@ function buildBody(opts: ChatOptions, stream: boolean): WorkersAiRunBody {
 async function maybeBYOK(opts: ChatOptions): Promise<string | null> {
   if (opts.byokOverride !== undefined) return opts.byokOverride;
   if (!opts.workspaceId) return null;
-  // M6 always null. M8 plug-in point: decide which provider to look up
-  // based on workspace settings, then return the decrypted key.
-  return getBYOK(opts.env, opts.workspaceId, "anthropic");
+  // M8: route by model. Workers AI ids (`@cf/...`) skip the BYOK
+  // lookup entirely (resolveProviderForModel returns null). The
+  // `byok:<provider>` sentinel models — set as the workspace default
+  // via /settings/workspace — and canonical SDK shapes (claude-*, gpt-*,
+  // gemini-*) resolve to the matching provider. v0.0.1's chat() call
+  // sites still default to Workers AI when BYOK is null; M6 wired the
+  // call sites correctly, so only the provider resolution moved.
+  const model = opts.model && opts.model.length > 0 ? opts.model : opts.env.DEFAULT_LLM_MODEL;
+  const provider = resolveProviderForModel(model);
+  if (provider === null) return null;
+  return getBYOK(opts.env, opts.workspaceId, provider);
 }
 
 /** Non-streaming chat completion. Returns the full text. */
