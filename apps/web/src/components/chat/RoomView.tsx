@@ -4,9 +4,12 @@
 // as the page is interactive. Owns the chat plumbing (useChat) and
 // composes MessageList + MessageComposer + ConnectionBadge.
 
+import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { ApiError } from "@/lib/api";
+import { triggerIngest } from "@/lib/api-inbox";
 import type { SerializedRoom, SerializedUser } from "@/lib/types";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ConnectionBadge } from "./ConnectionBadge";
 import { MessageComposer } from "./MessageComposer";
@@ -22,6 +25,7 @@ export interface RoomViewProps {
 
 export function RoomView({ room, currentUser, members }: RoomViewProps) {
   const chat = useChat({ roomId: room.id, currentUserId: currentUser.id });
+  const [ingestPending, setIngestPending] = useState(false);
 
   // Author display-name lookup. Includes the current user as a baseline
   // so own messages render without a network round-trip. Workspace
@@ -41,6 +45,28 @@ export function RoomView({ room, currentUser, members }: RoomViewProps) {
     if (chat.lastError) toast.error(chat.lastError.message);
   }, [chat.lastError]);
 
+  async function handleRunIngest(): Promise<void> {
+    setIngestPending(true);
+    try {
+      const res = await triggerIngest(room.id);
+      if (res.status === "lock_held") {
+        toast.info("An ingest run is already in progress for this room.");
+      } else {
+        toast.success("Ingest started — check Inbox for proposals shortly.");
+      }
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? `${err.code}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : "Failed to start ingest";
+      toast.error(msg);
+    } finally {
+      setIngestPending(false);
+    }
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-col">
       <header className="flex items-center justify-between border-b border-border bg-background px-4 py-3">
@@ -48,7 +74,18 @@ export function RoomView({ room, currentUser, members }: RoomViewProps) {
           <h1 className="truncate text-base font-semibold">#{room.slug}</h1>
           {room.topic && <p className="truncate text-xs text-muted-foreground">{room.topic}</p>}
         </div>
-        <ConnectionBadge status={chat.status} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRunIngest}
+            disabled={ingestPending}
+            title="Run the ingest agent on this room's recent chat"
+          >
+            {ingestPending ? "Starting…" : "Run ingest"}
+          </Button>
+          <ConnectionBadge status={chat.status} />
+        </div>
       </header>
 
       <div className="min-h-0 flex-1">
