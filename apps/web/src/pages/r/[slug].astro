@@ -26,10 +26,11 @@ try {
 }
 
 const room = me.rooms.find((r) => r.slug === slug);
+const isOwner = me.workspace.owner_id === me.user.id;
 ---
 
 <Layout title={room ? `#${room.slug} — ${me.workspace.name}` : "Room not found"}>
-  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name} isOwner={isOwner}>
     <RoomList
       slot="sidebar"
       client:idle
