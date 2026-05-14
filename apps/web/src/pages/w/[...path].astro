@@ -88,7 +88,7 @@ const draft: WikiPagePayload | null =
 ---
 
 <Layout title={page ? `${page.frontmatter.title} — ${me.workspace.name}` : "Wiki page not found"}>
-  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name} isOwner={isOwner}>
     <WikiTree
       slot="sidebar"
       client:idle

@@ -24,12 +24,13 @@ try {
   throw err;
 }
 
+const isOwner = me.workspace.owner_id === me.user.id;
 const today = new Date().toISOString().slice(0, 10);
 const digestHref = `/w/_inbox/${today}.md`;
 ---
 
 <Layout title={`Inbox — ${me.workspace.name}`}>
-  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name} isOwner={isOwner}>
     <RoomList
       slot="sidebar"
       client:idle
