@@ -31,6 +31,14 @@ the worker proxies through.
 For a full first-time setup (D1 migrations, Cloudflare Access, Worker
 secrets), follow [`DEPLOY.md`](./DEPLOY.md).
 
+To verify the M2 chat round-trip and hibernation behaviour locally, run the
+[M2 smoke script](./docs/SMOKE.md#m2--chat-round-trip) after `pnpm dev` is
+running:
+
+```sh
+pnpm smoke:m2
+```
+
 The full project conventions — commands, Cloudflare bindings, code
 style, "do-not-touch" zones — live in [`CLAUDE.md`](./CLAUDE.md). The
 master spec is [`SPEC.md`](./SPEC.md). The threat model is
