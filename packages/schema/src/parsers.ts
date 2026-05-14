@@ -17,6 +17,7 @@ import {
   ProposalRowSchema,
   RoomMemberRowSchema,
   RoomRowSchema,
+  ScheduledActionRowSchema,
   UserRowSchema,
   type WikiPageFrontmatter,
   WikiPageFrontmatterSchema,
@@ -48,6 +49,8 @@ export const parseProposalRow = (row: unknown) => parseRow(ProposalRowSchema, ro
 export const parseAuditLogRow = (row: unknown) => parseRow(AuditLogRowSchema, row, "audit_log");
 export const parseWorkspaceSettingsRow = (row: unknown) =>
   parseRow(WorkspaceSettingsRowSchema, row, "workspace_settings");
+export const parseScheduledActionRow = (row: unknown) =>
+  parseRow(ScheduledActionRowSchema, row, "scheduled_actions");
 
 /**
  * Parse a Zod-validated wiki frontmatter object. Caller hands in an
@@ -98,6 +101,9 @@ export type {
   Room,
   RoomMember,
   RoomMemberRole,
+  ScheduledActionKind,
+  ScheduledActionRow,
+  ScheduledActionStatus,
   SearchReindexError,
   SearchReindexResponse,
   User,

@@ -20,6 +20,7 @@ import { meRoute } from "./routes/me.js";
 import { proposalsRoute } from "./routes/proposals.js";
 import { roomsRoute } from "./routes/rooms.js";
 import { runsRoute } from "./routes/runs.js";
+import { scheduledActionsRoute } from "./routes/scheduled-actions.js";
 import { searchRoute } from "./routes/search.js";
 import { agentsMdSettingsRoute } from "./routes/settings/agentsmd.js";
 import { byokSettingsRoute } from "./routes/settings/byok.js";
@@ -71,6 +72,7 @@ app.use("/api/_admin/audit", authMiddleware);
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
 app.route("/api/rooms", roomsRoute);
+app.route("/api/rooms", scheduledActionsRoute);
 // Wiki routes share a Hono router so the /wiki-tree, /wiki/*, and
 // /_admin/wiki/* paths can be defined in one place. Mounting at the
 // root means the route handlers can use the absolute paths above.

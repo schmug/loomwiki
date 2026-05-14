@@ -25,6 +25,7 @@ const TRUNCATE_ORDER = [
   "ingest_runs",
   "messages",
   "room_members",
+  "scheduled_actions",
   "rooms",
   "workspaces",
   "users",

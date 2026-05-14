@@ -115,6 +115,12 @@ export class ChatRoom extends DurableObject<Env> {
   }
 
   override async fetch(request: Request): Promise<Response> {
+    // Internal system endpoint: inject a message from the scheduled-actions tick.
+    // Must appear BEFORE the WebSocket upgrade check.
+    if (request.method === "POST" && new URL(request.url).pathname.endsWith("/_sys/message")) {
+      return this.handleSysPost(request);
+    }
+
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("expected upgrade", { status: 426 });
     }
@@ -438,6 +444,99 @@ export class ChatRoom extends DurableObject<Env> {
     const current = await this.ctx.storage.getAlarm();
     if (current === null) {
       await this.ctx.storage.setAlarm(Date.now() + MIRROR_RETRY_ALARM_MS);
+    }
+  }
+
+  // ---------- system message injection (scheduled-actions tick) ----------
+
+  /**
+   * POST /_sys/message — inject a system-authored message into the room.
+   * Called only from the scheduled-actions tick handler via stub.fetch();
+   * the DO's fetch() is only reachable from within the Worker, not from
+   * the public internet. Still validated by the x-loomwiki-sys header as
+   * defense-in-depth.
+   *
+   * Body JSON: { userId: string; roomId: string; body: string; parentId?: string | null }
+   */
+  private async handleSysPost(request: Request): Promise<Response> {
+    if (request.headers.get("x-loomwiki-sys") !== "1") {
+      return new Response("forbidden", { status: 403 });
+    }
+
+    let payload: { userId: string; roomId: string; body: string; parentId?: string | null };
+    try {
+      payload = (await request.json()) as {
+        userId: string;
+        roomId: string;
+        body: string;
+        parentId?: string | null;
+      };
+    } catch {
+      return new Response("invalid json", { status: 400 });
+    }
+
+    if (!payload.userId || !payload.roomId || !payload.body) {
+      return new Response("missing required fields", { status: 400 });
+    }
+
+    const messageId = id();
+    const createdAt = Math.floor(Date.now() / 1000);
+    const parentId = payload.parentId ?? null;
+
+    // Persist roomId so the alarm path can recover it.
+    setRoomId(this.sql, payload.roomId);
+
+    let wireMessage: WireMessage | null = null;
+
+    await this.ctx.blockConcurrencyWhile(async () => {
+      appendMessage(this.sql, {
+        id: messageId,
+        userId: payload.userId,
+        body: payload.body,
+        parentId,
+        createdAt,
+        pendingMirror: true,
+      });
+      wireMessage = {
+        id: messageId,
+        room_id: payload.roomId,
+        user_id: payload.userId,
+        body: payload.body,
+        parent_id: parentId,
+        created_at: createdAt,
+        edited_at: null,
+        deleted_at: null,
+      };
+    });
+
+    if (wireMessage) {
+      this.broadcastAll({ kind: "message", message: wireMessage });
+
+      // D1 mirror: best-effort, off the critical path.
+      this.scheduleMirror({
+        id: messageId,
+        roomId: payload.roomId,
+        userId: payload.userId,
+        body: payload.body,
+        parentId,
+        createdAt,
+        editedAt: null,
+        deletedAt: null,
+      });
+    }
+
+    return Response.json({ ok: true });
+  }
+
+  /** Broadcast to ALL open WebSocket clients (no exclusion). */
+  private broadcastAll(msg: ServerMsg): void {
+    const payload = JSON.stringify(msg);
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(payload);
+      } catch {
+        // Drop and let webSocketClose run.
+      }
     }
   }
 

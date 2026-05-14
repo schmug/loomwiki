@@ -6,7 +6,7 @@
 // the AppShell's MPA model and keeps the React island per-tab small.
 
 interface Props {
-  active: "byok" | "agentsmd" | "workspace";
+  active: "byok" | "agentsmd" | "workspace" | "schedules";
 }
 
 const { active } = Astro.props;
@@ -15,6 +15,7 @@ const tabs: { id: Props["active"]; href: string; label: string }[] = [
   { id: "byok", href: "/settings/byok", label: "BYOK" },
   { id: "agentsmd", href: "/settings/agentsmd", label: "AGENTS.md" },
   { id: "workspace", href: "/settings/workspace", label: "Workspace" },
+  { id: "schedules", href: "/settings/schedules", label: "Schedules" },
 ];
 ---
 
