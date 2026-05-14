@@ -107,6 +107,14 @@ export class ChatRoom extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private readonly limiter: RollingWindowLimiter;
 
+  /**
+   * Optional mirror function override. Defaults to `undefined` (inert in
+   * production — falls back to the real `mirrorMessageToD1`). Tests can
+   * inject a one-shot failing stub via `runInDurableObject` without any
+   * `NODE_ENV` branch in production code.
+   */
+  _mirrorFn: typeof mirrorMessageToD1 | undefined = undefined;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
@@ -424,8 +432,9 @@ export class ChatRoom extends DurableObject<Env> {
   }
 
   private async tryMirror(msg: MirrorMessage): Promise<void> {
+    const mirror = this._mirrorFn ?? mirrorMessageToD1;
     try {
-      await mirrorMessageToD1(this.env, msg);
+      await mirror(this.env, msg);
       clearPendingMirror(this.sql, msg.id);
     } catch (err) {
       console.warn("[chatroom] mirror failed", { id: msg.id, err: String(err) });
@@ -447,10 +456,11 @@ export class ChatRoom extends DurableObject<Env> {
       // Nothing has ever been written to this DO yet — nothing to mirror.
       return;
     }
+    const mirror = this._mirrorFn ?? mirrorMessageToD1;
     const pending = getPendingMirrorRows(this.sql, MIRROR_RETRY_BATCH);
     for (const row of pending) {
       try {
-        await mirrorMessageToD1(this.env, {
+        await mirror(this.env, {
           id: row.id,
           roomId,
           userId: row.user_id,
