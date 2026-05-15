@@ -20,10 +20,12 @@ try {
   }
   throw err;
 }
+
+const isOwner = me.workspace.owner_id === me.user.id;
 ---
 
 <Layout title={`Loomwiki — ${me.workspace.name}`}>
-  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name} isOwner={isOwner}>
     <RoomList
       slot="sidebar"
       client:idle
