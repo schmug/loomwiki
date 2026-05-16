@@ -102,7 +102,9 @@ describe("BYOKSettings", () => {
     // Wait for load.
     const addButtons = await screen.findAllByRole("button", { name: /Add key/ });
     // Click the Anthropic Add Key button (first card).
-    await user.click(addButtons[0]!);
+    const [firstAddBtn] = addButtons;
+    if (!firstAddBtn) throw new Error("Expected at least one Add key button");
+    await user.click(firstAddBtn);
 
     const textarea = screen.getByLabelText(/Paste API key/);
     const SECRET = "sk-ant-test-XYZ-do-not-leak";
@@ -134,7 +136,9 @@ describe("BYOKSettings", () => {
 
     render(<BYOKSettings />);
     const addButtons = await screen.findAllByRole("button", { name: /Add key/ });
-    await user.click(addButtons[0]!);
+    const [firstAddBtnCancel] = addButtons;
+    if (!firstAddBtnCancel) throw new Error("Expected at least one Add key button");
+    await user.click(firstAddBtnCancel);
     const textarea = screen.getByLabelText(/Paste API key/);
     await user.type(textarea, "sk-secret-cancelled");
     await user.click(screen.getByRole("button", { name: /^Cancel$/ }));
@@ -184,7 +188,8 @@ describe("BYOKSettings", () => {
       .getAllByRole("button", { name: /^Remove$/ })
       .find((b) => b !== removeButton);
     expect(dialogRemove).toBeDefined();
-    await user.click(dialogRemove!);
+    if (!dialogRemove) throw new Error("Expected dialog Remove button to exist");
+    await user.click(dialogRemove);
 
     await waitFor(() => {
       const deleteCall = calls.find(
