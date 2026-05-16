@@ -41,6 +41,7 @@ try {
   throw err;
 }
 
+const isOwner = me.workspace.owner_id === me.user.id;
 let currentPage: WikiPagePayload | null = null;
 if (detail.proposal.action === "update") {
   try {
@@ -58,7 +59,7 @@ if (detail.proposal.action === "update") {
 ---
 
 <Layout title={`Proposal — ${detail.proposal.page_path}`}>
-  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name} isOwner={isOwner}>
     <RoomList
       slot="sidebar"
       client:idle

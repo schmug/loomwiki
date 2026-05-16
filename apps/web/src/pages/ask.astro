@@ -18,10 +18,12 @@ try {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
   throw err;
 }
+
+const isOwner = me.workspace.owner_id === me.user.id;
 ---
 
 <Layout title={`Ask — ${me.workspace.name}`}>
-  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name}>
+  <AppShell workspaceName={me.workspace.name} userDisplayName={me.user.display_name} isOwner={isOwner}>
     <div slot="sidebar" class="p-4 text-xs text-muted-foreground">
       <p class="font-medium text-foreground">Ask</p>
       <p class="mt-1">Answers grounded in your wiki, with citations.</p>
