@@ -549,6 +549,12 @@ export class ChatRoom extends DurableObject<Env> {
     }
   }
 
+  // Test seam — only reachable via runInDurableObject, never over HTTP/WS.
+  localMessageCount(): number {
+    const cursor = this.sql.exec<{ c: number }>("SELECT COUNT(*) AS c FROM messages_local");
+    return cursor.one().c;
+  }
+
   private async flushPendingMirror(): Promise<void> {
     const roomId = getRoomId(this.sql);
     if (!roomId) {
