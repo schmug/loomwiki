@@ -4,9 +4,10 @@
 // route + DO upgrade all run as one unit. Reserves runInDurableObject for
 // cases the route layer cannot reach (alarm fire, mirror failure paths).
 
-import { SELF, env } from "cloudflare:test";
+import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { PROTOCOL_VERSION } from "@loomwiki/shared";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { ChatRoom } from "../do/ChatRoom.js";
 import { applyMigrations, resetDb } from "./__fixtures__/db.js";
 import { type JwtFixture, makeJwtFixture } from "./__fixtures__/jwt.js";
 import { type WsSession, openWs } from "./__fixtures__/ws.js";
@@ -162,6 +163,20 @@ describe("ChatRoom DO — WebSocket flow", () => {
 
   it("rate-limits beyond 100 msg/sec/room with RATE_LIMITED", async () => {
     const alice = await bootstrapMember("alice@example.com", "general");
+
+    // Freeze the rate-limiter clock via the _nowFn seam so the 1-second
+    // rolling window never advances during the ack-drain loop. Without this,
+    // the ack-drain (100 × `await ws.next()`) can exceed 1000ms wall-clock on
+    // a loaded CI runner, causing the window to expire and the 101st send to
+    // be allowed instead of rejected — the original flake (#55).
+    const frozenNow = Date.now();
+    const stub = (env.CHAT_ROOM as DurableObjectNamespace<ChatRoom>).get(
+      (env.CHAT_ROOM as DurableObjectNamespace<ChatRoom>).idFromName(alice.roomId),
+    );
+    await runInDurableObject(stub, (instance: ChatRoom) => {
+      instance._nowFn = () => frozenNow;
+    });
+
     const ws = await track(await openWs(alice.roomId, alice.jwt));
     ws.send({ kind: "hello", protocolVersion: PROTOCOL_VERSION });
     await ws.next();
@@ -170,15 +185,16 @@ describe("ChatRoom DO — WebSocket flow", () => {
     for (let i = 0; i < 100; i++) {
       ws.send({ kind: "send", tempId: `t-${i}`, body: `m${i}` });
     }
-    // Drain acks (and any echoed messages — there's only one socket so we
-    // expect 100 acks total).
+    // Drain acks — the frozen clock guarantees all 100 hits remain in window
+    // no matter how long this loop takes in real time.
     let acks = 0;
     while (acks < 100) {
       const m = await ws.next(2000);
       if (m.kind === "ack") acks++;
     }
 
-    // The 101st must be rejected.
+    // The 101st must be rejected because the frozen clock keeps all 100 prior
+    // hits inside the window.
     ws.send({ kind: "send", tempId: "rate", body: "rate-me" });
     const next = await ws.next();
     expect(next.kind).toBe("error");
