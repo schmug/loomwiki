@@ -14,6 +14,7 @@
       "**/.astro",
       "**/.wrangler",
       "**/coverage",
+      "**/.claude/**",
       "pnpm-lock.yaml",
       "**/*.md",
       "apps/worker/src/generated/**",
