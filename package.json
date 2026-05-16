@@ -37,6 +37,12 @@
     "ws": "^8.18.2"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild", "sharp", "workerd"]
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild", "sharp", "workerd"],
+    "overrides": {
+      "undici@>=7.0.0 <7.24.0": ">=7.24.0",
+      "fast-uri@<3.1.2": ">=3.1.2",
+      "devalue@<5.8.1": ">=5.8.1",
+      "yaml@<2.8.3": ">=2.8.3"
+    }
   }
 }
