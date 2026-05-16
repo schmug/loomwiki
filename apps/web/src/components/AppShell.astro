@@ -41,14 +41,34 @@ const onChat = !onWiki && !onAsk && !onInbox && !onSettings;
 ---
 
 <style>
-  /* Mobile: hide sidebar by default; reveal when AppShellHeader marks
-     the html element open. md+ always visible via Tailwind in markup. */
+  /* Mobile: hide sidebar by default; reveal as a fixed overlay drawer when
+     AppShellHeader marks the html element open. md+ always visible via
+     Tailwind in markup. */
   @media (max-width: 767px) {
     [data-sidebar-open="true"] aside[data-app-sidebar] {
       display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 16rem;
+      z-index: 50;
+      overflow-y: auto;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
     }
     [data-sidebar-open="false"] aside[data-app-sidebar] {
       display: none;
+    }
+    /* Backdrop: dims content behind the drawer; hidden by default. */
+    [data-sidebar-backdrop] {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(0, 0, 0, 0.45);
+    }
+    [data-sidebar-open="true"] [data-sidebar-backdrop] {
+      display: block;
     }
   }
 </style>
@@ -61,6 +81,8 @@ const onChat = !onWiki && !onAsk && !onInbox && !onSettings;
   />
 
   <div class="flex min-h-0 flex-1">
+    {/* Backdrop: only rendered on mobile; CSS shows it when sidebar is open */}
+    <div data-sidebar-backdrop aria-hidden="true" />
     <aside
       data-app-sidebar
       aria-label="Sidebar"
@@ -160,3 +182,22 @@ const onChat = !onWiki && !onAsk && !onInbox && !onSettings;
     }
   </div>
 </div>
+
+<script>
+  // Close the mobile sidebar when the backdrop is clicked or when a nav link
+  // inside the sidebar is tapped. Setting data-sidebar-open="false" on <html>
+  // triggers the AppShellHeader React island to sync its own state via the
+  // same attribute it reads, so the hamburger aria-expanded stays accurate.
+  document.addEventListener("click", (e) => {
+    const html = document.documentElement;
+    if (html.getAttribute("data-sidebar-open") !== "true") return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (
+      target.closest("[data-sidebar-backdrop]") ||
+      (target.closest("[data-app-sidebar]") && target.closest("a[href]"))
+    ) {
+      html.setAttribute("data-sidebar-open", "false");
+    }
+  });
+</script>
