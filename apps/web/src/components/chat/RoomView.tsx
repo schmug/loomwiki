@@ -7,8 +7,9 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { ApiError } from "@/lib/api";
-import { triggerIngest } from "@/lib/api-inbox";
+import { getRunStatus, triggerIngest } from "@/lib/api-inbox";
 import type { SerializedRoom, SerializedUser } from "@/lib/types";
+import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ConnectionBadge } from "./ConnectionBadge";
@@ -21,6 +22,38 @@ export interface RoomViewProps {
   currentUser: SerializedUser;
   /** Pre-fetched workspace members for display-name resolution. */
   members?: SerializedUser[];
+}
+
+const POLL_MAX_ATTEMPTS = 15;
+const POLL_INTERVAL_MS = 2_000;
+
+// Polls GET /api/runs/:id until the run reaches a terminal state, then
+// shows the appropriate toast. Runs fire-and-forget after the trigger
+// returns so the ingest button re-enables immediately.
+async function pollRunOutcome(runId: string): Promise<void> {
+  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+    try {
+      const { run } = await getRunStatus(runId);
+      if (run.status === "succeeded") {
+        toast.success("Ingest completed — check Inbox for proposals.");
+        return;
+      }
+      if (run.status === "failed") {
+        toast.error(
+          run.error
+            ? `Ingest failed: ${run.error}`
+            : "Ingest failed — check worker logs for details.",
+        );
+        return;
+      }
+    } catch {
+      // transient fetch error — keep retrying
+    }
+  }
+  toast.info("Ingest is still running — check Inbox for proposals shortly.");
 }
 
 export function RoomView({ room, currentUser, members }: RoomViewProps) {
@@ -51,9 +84,11 @@ export function RoomView({ room, currentUser, members }: RoomViewProps) {
       const res = await triggerIngest(room.id);
       if (res.status === "lock_held") {
         toast.info("An ingest run is already in progress for this room.");
-      } else {
-        toast.success("Ingest started — check Inbox for proposals shortly.");
+        return;
       }
+      // Fire-and-forget: poll for the run outcome in the background so
+      // the button re-enables immediately. The toast updates when done.
+      void pollRunOutcome(res.run_id);
     } catch (err) {
       const msg =
         err instanceof ApiError
@@ -80,8 +115,10 @@ export function RoomView({ room, currentUser, members }: RoomViewProps) {
             size="sm"
             onClick={handleRunIngest}
             disabled={ingestPending}
-            title="Run the ingest agent on this room's recent chat"
+            title="Extract wiki proposals from recent chat (requires AI config)"
+            className="gap-1.5"
           >
+            <Play className="size-3.5" aria-hidden="true" />
             {ingestPending ? "Starting…" : "Run ingest"}
           </Button>
           <ConnectionBadge status={chat.status} />
