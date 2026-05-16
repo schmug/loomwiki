@@ -600,3 +600,58 @@ export type AuditLogRow = z.infer<typeof AuditLogRowSchema>;
 // without changing the on-disk row schema.
 export const AuditLogEntrySchema = AuditLogRowSchema;
 export type AuditLogEntry = z.infer<typeof AuditLogEntrySchema>;
+
+// ---------- Scheduled actions (issue #33) ----------
+
+export const ScheduledActionKindSchema = z.enum(["cron", "once"]);
+export type ScheduledActionKind = z.infer<typeof ScheduledActionKindSchema>;
+
+export const ScheduledActionStatusSchema = z.enum(["active", "paused", "fired", "failed"]);
+export type ScheduledActionStatus = z.infer<typeof ScheduledActionStatusSchema>;
+
+export const ScheduledActionRowSchema = z.object({
+  id: Uuidv7Schema,
+  workspace_id: Uuidv7Schema,
+  room_id: Uuidv7Schema,
+  created_by: Uuidv7Schema,
+  kind: ScheduledActionKindSchema,
+  cron_expr: z.string().nullable(),
+  fire_at: EpochSeconds.nullable(),
+  prompt: z.string().min(1).max(4096),
+  status: ScheduledActionStatusSchema,
+  failure_count: z.number().int().nonnegative(),
+  last_fired_at: EpochSeconds.nullable(),
+  next_fire_at: EpochSeconds,
+  created_at: EpochSeconds,
+  updated_at: EpochSeconds,
+});
+export type ScheduledActionRow = z.infer<typeof ScheduledActionRowSchema>;
+
+// Validated at create-time: either {kind:'cron', cron_expr} or {kind:'once', fire_at}
+export const CreateScheduledActionRequestSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("cron"),
+    cron_expr: z.string().min(9).max(100),
+    prompt: z.string().min(1).max(4096),
+    description: z.string().max(200).optional(),
+  }),
+  z.object({
+    kind: z.literal("once"),
+    fire_at: EpochSeconds,
+    prompt: z.string().min(1).max(4096),
+    description: z.string().max(200).optional(),
+  }),
+]);
+export type CreateScheduledActionRequest = z.infer<typeof CreateScheduledActionRequestSchema>;
+
+export const PatchScheduledActionRequestSchema = z
+  .object({
+    status: z.enum(["active", "paused"]).optional(),
+    cron_expr: z.string().min(9).max(100).optional(),
+    fire_at: EpochSeconds.optional(),
+    prompt: z.string().min(1).max(4096).optional(),
+  })
+  .refine((o) => Object.values(o).some((v) => v !== undefined), {
+    message: "at least one field required",
+  });
+export type PatchScheduledActionRequest = z.infer<typeof PatchScheduledActionRequestSchema>;

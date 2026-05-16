@@ -154,6 +154,6 @@
     // lands so the same day's chat is fully reflected in /rooms/* before
     // the agent runs. Both crons dispatch through scheduled() in
     // apps/worker/src/scheduled.ts via controller.cron switch.
-    "crons": ["0 2 * * *", "0 3 * * *"]
+    "crons": ["0 2 * * *", "0 3 * * *", "* * * * *"]
   }
 }
