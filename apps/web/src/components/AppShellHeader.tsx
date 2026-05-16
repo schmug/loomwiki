@@ -26,6 +26,21 @@ export function AppShellHeader({ workspaceName, userDisplayName }: AppShellHeade
     document.documentElement.setAttribute(SIDEBAR_OPEN_ATTR, open ? "true" : "false");
   }, [open]);
 
+  // Keep React state in sync when external code (backdrop/nav-link handler)
+  // sets data-sidebar-open directly on <html> without going through setOpen.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const observer = new MutationObserver(() => {
+      const val = document.documentElement.getAttribute(SIDEBAR_OPEN_ATTR);
+      setOpen(val === "true");
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [SIDEBAR_OPEN_ATTR],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background px-3 py-2">
       <Button
