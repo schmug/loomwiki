@@ -115,6 +115,14 @@ export class ChatRoom extends DurableObject<Env> {
    */
   _mirrorFn: typeof mirrorMessageToD1 | undefined = undefined;
 
+  /**
+   * Optional clock override for the rate limiter. Defaults to `undefined`
+   * (production uses `Date.now()`). Tests can inject a frozen timestamp via
+   * `runInDurableObject` so the rolling window never advances during the
+   * ack-drain loop, making the rate-limit test deterministic (#55).
+   */
+  _nowFn: (() => number) | undefined = undefined;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
@@ -277,7 +285,7 @@ export class ChatRoom extends DurableObject<Env> {
       sendError(ws, ErrorCodes.VALIDATION_FAILED, "body exceeds 4096 chars", env.tempId);
       return;
     }
-    if (!this.limiter.tryAcquire(Date.now())) {
+    if (!this.limiter.tryAcquire((this._nowFn ?? Date.now.bind(Date))())) {
       sendError(ws, ErrorCodes.RATE_LIMITED, "100 msg/sec/room cap reached", env.tempId);
       return;
     }
