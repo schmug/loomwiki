@@ -79,7 +79,9 @@ describe("AgentsMdEditor", () => {
 
     // Click Save changes button (top-level, not the dialog one yet).
     const saveButtons = screen.getAllByRole("button", { name: /Save changes/ });
-    await user.click(saveButtons[0]!);
+    const [firstSaveBtn] = saveButtons;
+    if (!firstSaveBtn) throw new Error("Expected at least one Save changes button");
+    await user.click(firstSaveBtn);
 
     // Confirm dialog appears.
     expect(await screen.findByText(/Update AGENTS\.md\?/)).toBeInTheDocument();
@@ -89,7 +91,8 @@ describe("AgentsMdEditor", () => {
     // last one which is the dialog button).
     const dialogSave = screen.getAllByRole("button", { name: /Save changes/ }).at(-1);
     expect(dialogSave).toBeDefined();
-    await user.click(dialogSave!);
+    if (!dialogSave) throw new Error("Expected dialog Save changes button to exist");
+    await user.click(dialogSave);
 
     await waitFor(() => {
       const putCall = calls.find(
