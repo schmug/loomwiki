@@ -44,6 +44,32 @@ style, "do-not-touch" zones — live in [`CLAUDE.md`](./CLAUDE.md). The
 master spec is [`SPEC.md`](./SPEC.md). The threat model is
 [`docs/SECURITY.md`](./docs/SECURITY.md).
 
+## Running ingest manually
+
+The ingest agent reads recent chat messages in a room and extracts wiki
+proposals. To trigger it manually:
+
+1. Open a room as a member.
+2. Click the **▶ Run ingest** button in the room header (top-right).
+3. The button is disabled while the trigger is in flight; once it
+   returns, the UI polls `GET /api/runs/:id` and shows a success or
+   error toast when the run reaches a terminal state.
+
+**Required operator config** (set via `wrangler secret put` or the
+Cloudflare dashboard → Workers → your worker → Settings → Variables):
+
+| Setting | Purpose |
+|---|---|
+| `AI_GATEWAY_ID` | AI Gateway slug (enables cost guards) |
+| `CF_ACCOUNT_ID` | Cloudflare account ID for Gateway URL composition |
+
+The `AI` Workers AI binding must also be enabled in `wrangler.jsonc`.
+If neither a gateway nor the binding is configured, the run will fail
+immediately with an actionable error shown in the UI.
+
+For the full ingest-agent design, see
+[`docs/ADR/0005-ingest-agent-design.md`](./docs/ADR/0005-ingest-agent-design.md).
+
 ## Roadmap to v0.1
 
 The v0.0.1 release is the dogfood-first milestone. The v0.1 effort
