@@ -20,6 +20,7 @@
     "deploy:web": "pnpm --filter @loomwiki/web run deploy",
     "deploy:all": "pnpm --filter @loomwiki/worker run deploy && pnpm --filter @loomwiki/web run deploy",
     "smoke:live": "tsx scripts/smoke-live.ts",
+    "smoke:m2": "tsx scripts/smoke-m2.ts",
     "migrate:local": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations apply loomwiki --local --config ../../wrangler.jsonc",
     "migrate:remote": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations apply loomwiki --remote --config ../../wrangler.jsonc",
     "migrate:new": "pnpm --filter @loomwiki/worker exec wrangler d1 migrations create loomwiki --config ../../wrangler.jsonc",
@@ -28,10 +29,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/ws": "^8.5.13",
     "comment-json": "^5.0.0",
     "concurrently": "^9.1.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "ws": "^8.18.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["@biomejs/biome", "esbuild", "sharp", "workerd"]
