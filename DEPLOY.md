@@ -1076,25 +1076,33 @@ Configure at **Settings → Secrets and variables → Actions →
 Variables**:
 
 - `WEB_CD_ENABLED` — set to the string `"true"` to enable the
-  `deploy-web` job. **Leave it unset (or `"false"`) until the one-time
-  Pages → Worker production cutover is complete.** The web app deploys
-  as a Worker post-#76, but an existing deploy must finish the cutover
-  *before* the first automated `wrangler deploy` of `loomwiki-web`,
-  otherwise the deploy collides on the name and the live site breaks.
-  See **One-time production cutover: Pages project → Worker** above for
-  the full procedure.
+  `deploy-web` job. **The canonical deploy has completed the one-time
+  Pages → Worker cutover; this variable is now `"true"` on
+  `loomwiki.cortech.online`.** Fork operators on an existing deploy:
+  leave it unset (or `"false"`) until you complete your own cutover —
+  see **One-time production cutover: Pages project → Worker** above.
+  Fresh deploys on a clean account (no prior Pages project) can set it
+  to `"true"` immediately after the first manual `pnpm deploy:web`.
 
-### Enabling web CD after the cutover
+### Web CD status: enabled (canonical deploy)
+
+The `loomwiki.cortech.online` deploy has completed the one-time Pages →
+Worker cutover. `WEB_CD_ENABLED=true` is set in the repo; `deploy-web`
+runs automatically on every push to `main` after `deploy-api` succeeds
+(so the `API` service binding resolves before the web Worker deploys).
+
+**Fork operators** who have not yet cut over should follow these steps
+before setting the variable:
 
 1. Complete the **One-time production cutover** (above): detach the
    custom domain from the retired Pages project, delete the Pages
    project, run `pnpm deploy:web` once manually from a clean tree, and
    attach the custom domain to the new Worker.
-2. Verify the live site (`curl -s https://loomwiki.cortech.online/api/health`
-   and a browser sign-in).
-3. Then, and only then, set repo variable `WEB_CD_ENABLED=true`. The
-   next push to `main` will deploy `loomwiki-web` automatically (after
-   `deploy-api`, so the `API` service binding resolves).
+2. Verify the live site (`curl -s https://your-domain/api/health` and
+   a browser sign-in).
+3. Then set repo variable `WEB_CD_ENABLED=true` (Settings → Secrets and
+   variables → Actions → Variables). The next push to `main` deploys
+   `loomwiki-web` automatically (after `deploy-api`).
 
 A fresh deploy on a clean account that never had a Pages project can
 skip the cutover and set `WEB_CD_ENABLED=true` immediately after the
