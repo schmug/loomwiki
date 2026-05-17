@@ -221,12 +221,23 @@ jobs:
           # which has no text/html body so the middleware skips it. Use
           # GET (not HEAD); -D - dumps response headers, -o /dev/null
           # discards the body.
-          HEADERS=$(curl -fsS -D - -o /dev/null --max-time 10 \
+          # Diagnostic: capture status + response headers and PRINT them
+          # (response headers carry no secrets) so a failure shows what
+          # /login actually returns instead of failing opaquely. Drop -f
+          # so an HTTP error still yields headers to inspect; assert the
+          # status and the security headers explicitly afterwards.
+          resp_headers="$(mktemp)"
+          code="$(curl -sS -o /dev/null -D "$resp_headers" -w '%{http_code}' --max-time 10 \
             -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
             -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
-            "${BASE_URL}/login")
-          echo "$HEADERS" | grep -i '^Content-Security-Policy:' > /dev/null
-          echo "$HEADERS" | grep -i '^X-Frame-Options:[[:space:]]*DENY' > /dev/null
+            "${BASE_URL}/login")"
+          echo "GET ${BASE_URL}/login -> HTTP ${code}"
+          echo "--- response headers ---"
+          cat "$resp_headers"
+          echo "--- end response headers ---"
+          test "$code" = "200"
+          grep -i '^Content-Security-Policy:' "$resp_headers" > /dev/null
+          grep -i '^X-Frame-Options:[[:space:]]*DENY' "$resp_headers" > /dev/null
 
       - name: Verify /api/me (authenticated)
         id: me
