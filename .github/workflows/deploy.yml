@@ -208,19 +208,23 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          # The whole origin is behind Cloudflare Access. Without the
-          # service-token headers this request gets Access's own login
-          # challenge — not our app — so the Astro middleware
-          # (apps/web/src/middleware.ts) that sets CSP / X-Frame-Options
-          # never runs and the headers are absent. Authenticate like the
-          # /api/health and /api/me steps. Also use a GET (not HEAD): the
-          # middleware only attaches these headers to text/html responses,
-          # so we need the real SSR HTML response. -D - dumps response
-          # headers, -o /dev/null discards the body.
+          # The whole origin is behind Cloudflare Access, so send the
+          # service-token headers (like /api/health and /api/me) to reach
+          # the Worker rather than Access's login challenge. Target
+          # /login specifically: it is a static public HTML page
+          # (apps/web/src/pages/login.astro — no /api/me call, no
+          # redirect), so it always returns text/html and the Astro
+          # middleware (apps/web/src/middleware.ts) attaches CSP /
+          # X-Frame-Options. Requesting "/" instead fails because a
+          # service token is not a user session: index.astro's /api/me
+          # call 401s and the page returns a 302 redirect to /login,
+          # which has no text/html body so the middleware skips it. Use
+          # GET (not HEAD); -D - dumps response headers, -o /dev/null
+          # discards the body.
           HEADERS=$(curl -fsS -D - -o /dev/null --max-time 10 \
             -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
             -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
-            "${BASE_URL}/")
+            "${BASE_URL}/login")
           echo "$HEADERS" | grep -i '^Content-Security-Policy:' > /dev/null
           echo "$HEADERS" | grep -i '^X-Frame-Options:[[:space:]]*DENY' > /dev/null
 
