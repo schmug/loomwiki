@@ -6,13 +6,20 @@
 
 ## Quick path: dogfood deploy on `loomwiki.cortech.online`
 
-The reference deploy is a single-domain setup:
+The reference deploy is a single-domain setup, **two Workers**:
 
-- **Worker** (`loomwiki-api`) handles `/api/*` on `loomwiki.cortech.online`.
-- **Pages** project (`loomwiki-web`) serves everything else on the same hostname (Astro SSR).
-- Workers route patterns take precedence over Pages custom domains for overlapping paths, so both coexist on one hostname without subdomain splits.
+- **API Worker** (`loomwiki-api`) handles `/api/*` on `loomwiki.cortech.online` (claimed via a Worker route pattern).
+- **Web Worker** (`loomwiki-web`) serves everything else on the same hostname — Astro SSR via `@astrojs/cloudflare` v13, which deploys as a Worker (not Pages). Static build output is served through the adapter's `ASSETS` binding.
+- Worker route patterns (`/api/*` → API) take precedence over the web Worker's custom domain for overlapping paths, so both coexist on one hostname without subdomain splits.
+- The web Worker reaches the API Worker through a `API` **service binding** (declared in `apps/web/wrangler.jsonc`), not a same-host fetch — this avoids the SSR loopback gotcha where a bare `/api/*` fetch from the web Worker lands back in the web Worker instead of the API Worker.
 
-The full setup is in this file's section-by-section flow — DNS → bindings → Access → secrets → deploy. The cortech-specific pattern is in §M7-dogfood at the bottom; the rest of the file is generic and works for any operator's domain.
+> **Topology note (post-#76):** `@astrojs/cloudflare` v13 dropped Cloudflare
+> Pages support, so `apps/web` migrated from a Pages project to a Worker
+> (`wrangler deploy`). This is a one-time change for existing deploys — see
+> the **One-time production cutover** section below before your next web
+> deploy, or the live site will break.
+
+The full setup is in this file's section-by-section flow — DNS → bindings → Access → secrets → deploy. The cortech-specific pattern is in §dogfood at the bottom; the rest of the file is generic and works for any operator's domain.
 
 ## Prerequisites
 
@@ -119,12 +126,41 @@ wrangler secret put AI_GATEWAY_TOKEN
 ### 5. Deploy
 
 ```sh
-pnpm deploy:worker
+pnpm deploy:worker          # API Worker (loomwiki-api)
+pnpm deploy:web             # Web Worker (loomwiki-web): astro build + wrangler deploy
+# or both:
+pnpm deploy:all
 ```
 
 (Note: `pnpm deploy` without `run` collides with pnpm's built-in
 "deploy a workspace package" command. Use `deploy:worker` /
 `deploy:web` / `deploy:all` — the colon disambiguates.)
+
+`deploy:web` runs `astro build && wrangler deploy` from `apps/web`.
+`@astrojs/cloudflare` v13 deploys the Astro SSR app as a **Worker**, not a
+Pages project. `apps/web/wrangler.jsonc` carries the Worker shape:
+
+- `main: "@astrojs/cloudflare/entrypoints/server"` — the adapter's SSR
+  server entrypoint.
+- `assets: { directory: "./dist", binding: "ASSETS" }` — serves the static
+  build output through the asset fetcher (replaces the old
+  `pages_build_output_dir`).
+- `services: [{ binding: "API", service: "loomwiki-api" }]` — the
+  Worker → Worker service binding the SSR helper
+  (`apps/web/src/lib/ssr-api.ts`) prefers over a bare `/api/*` fetch.
+
+**Default adapter bindings (`IMAGES`, `SESSION`):** `@astrojs/cloudflare`
+v13 auto-enables a default `IMAGES` binding (Cloudflare Images) and a
+`SESSION` KV namespace. Wrangler **auto-provisions both on `wrangler
+deploy`** — no manual `wrangler kv namespace create` or dashboard step is
+needed, and they do not appear in `apps/web/wrangler.jsonc`. Operators see
+them created automatically the first time `pnpm deploy:web` runs; this is
+expected, not a misconfiguration. The web app does not currently use either
+binding directly, but the adapter declares them.
+
+**Deploy order matters:** deploy `loomwiki-api` first (or at least once)
+so the `API` service binding on `loomwiki-web` resolves at deploy time.
+`pnpm deploy:all` does this in the right order.
 
 ## Local development
 
@@ -648,6 +684,97 @@ the in-memory cache TTL (5 minutes) — fresh Worker isolates pick it
 up immediately. Restart the worker (`wrangler deploy`) for an
 immediate global cutover.
 
+## One-time production cutover: Pages project → Worker
+
+> **Applies once, to any deploy that ran before #76.** `@astrojs/cloudflare`
+> v13 dropped Cloudflare Pages support; `apps/web` now deploys as a Worker.
+> A live deploy that still has a `loomwiki-web` **Pages** project must be
+> cut over **before the next `pnpm deploy:web`** — otherwise the deploy
+> either fails (name collision) or the site stops serving. A fresh deploy
+> on a clean account skips this section entirely (just follow the standard
+> flow above).
+
+### Worker name decision
+
+The web Worker keeps the name **`loomwiki-web`** (already set in
+`apps/web/wrangler.jsonc` → `"name": "loomwiki-web"`). Cloudflare does
+**not** allow a Worker and a Pages project to share a name within an
+account, so the **retired `loomwiki-web` Pages project must be deleted (or
+renamed) first** to free the name. Keeping the name avoids editing
+source-controlled config and keeps the dashboard/binding references in this
+doc accurate.
+
+> This name-reuse choice is the recommended default, not yet operator-
+> confirmed. If you would rather keep the Pages project around (e.g. for a
+> staged rollback window) you must instead rename the Worker — change
+> `"name"` in `apps/web/wrangler.jsonc` (a code change, out of scope for
+> the docs that introduced this section) and update every `loomwiki-web`
+> reference here. Raise this in review before deviating.
+
+### Cutover procedure (operator, one-time)
+
+Run in this order. Expect a brief web-serving gap between steps 3 and 5
+(the API route on `/api/*` is unaffected — it's a separate Worker).
+
+1. **Snapshot for rollback.** Note the current Pages project's settings:
+   the production branch, the attached custom domain
+   (`loomwiki.cortech.online`), and the last successful deployment. Confirm
+   the pre-#76 git revision of `apps/web/wrangler.jsonc` is reachable
+   (`git log -- apps/web/wrangler.jsonc`) in case a redeploy of the old
+   topology is needed.
+2. **Detach the custom domain from the Pages project.** Dashboard →
+   **Workers & Pages → loomwiki-web (Pages) → Custom domains → remove
+   `loomwiki.cortech.online`**. The domain must be free before the Worker
+   can claim it, and the Pages project must be gone before the Worker can
+   take the name.
+3. **Delete (or rename) the retired Pages project.** Dashboard →
+   **Workers & Pages → loomwiki-web (Pages) → Settings → Delete project**.
+   (Rename is not offered for Pages projects; deletion is the path.
+   Cloudflare retains deployment history briefly — see rollback.)
+4. **Deploy the web Worker.** From a clean tree on the post-#76 main:
+
+   ```sh
+   pnpm deploy:web     # astro build && wrangler deploy → creates the loomwiki-web Worker
+   ```
+
+   On first deploy the adapter's default `IMAGES` and `SESSION` bindings
+   are auto-provisioned (expected — see §5).
+5. **Attach the custom domain to the Worker.** Dashboard →
+   **Workers & Pages → loomwiki-web (Worker) → Settings → Domains &
+   Routes → Add → Custom domain → `loomwiki.cortech.online`**. Wait for
+   the certificate to go active (usually < 1 minute).
+6. **Verify.**
+
+   ```sh
+   curl -s https://loomwiki.cortech.online/api/health | jq .   # API route unaffected
+   curl -sI https://loomwiki.cortech.online/ | head -3          # web Worker serving SSR
+   ```
+
+   Sign in via browser and confirm an authenticated page renders (the SSR
+   path exercises the `API` service binding).
+
+### Rollback (if the Worker deploy regresses)
+
+The cutover is reversible within Cloudflare's deletion grace window:
+
+1. **Detach the custom domain from the Worker** (dashboard → the Worker →
+   Domains & Routes → remove `loomwiki.cortech.online`).
+2. **Restore the Pages project.** If still inside Cloudflare's retention
+   window, restore the deleted `loomwiki-web` Pages project from the
+   dashboard (Workers & Pages → deleted projects). If the window has
+   lapsed, recreate it from the pre-#76 topology: check out the
+   pre-#76 revision of `apps/web` (which still had
+   `pages_build_output_dir`), `wrangler pages project create loomwiki-web
+   --production-branch main`, then `wrangler pages deploy ./dist
+   --project-name loomwiki-web --branch main`.
+3. **Reattach `loomwiki.cortech.online`** as a custom domain on the
+   restored Pages project. The API Worker and its `/api/*` route are
+   untouched throughout, so only the web tier flips back.
+
+Because the Worker keeps the `loomwiki-web` name, rollback requires the
+Worker to be deleted (or renamed) before the Pages project can reclaim the
+name — the same collision constraint, in reverse.
+
 ## Dogfood deploy (`loomwiki.cortech.online`) + live smoke
 
 This section is the cortech-specific reference deploy. The same pattern
@@ -657,7 +784,7 @@ and `cortech.online` with your hostname + zone throughout.
 ### 1. DNS
 
 - [ ] Confirm `cortech.online` is on Cloudflare's nameservers (Cloudflare dashboard → Websites → your zone → Overview).
-- [ ] No A/AAAA record needed for `loomwiki.cortech.online` — both Pages custom domain and Worker route create their own DNS records on attach.
+- [ ] No A/AAAA record needed for `loomwiki.cortech.online` — the web Worker's custom domain and the API Worker's route each create their own DNS records on attach.
 
 ### 2. Bindings (already provisioned in this fork)
 
@@ -710,23 +837,29 @@ wrangler secret put AI_GATEWAY_TOKEN        # the API token from step 4
 # wrangler secret put ARTIFACTS_TOKEN       # M4.5+; leave unset for v0.0.1 dogfood
 ```
 
-### 7. Pages project (one-time)
+### 7. Web Worker custom domain (one-time)
 
-```sh
-wrangler pages project create loomwiki-web --production-branch main
-```
+The web app deploys as a Worker (`loomwiki-web`) — there is no Pages
+project to create. The Worker is created by the first `pnpm deploy:web`.
+Attach the custom domain after that first deploy:
 
-In the dashboard: **Workers & Pages → loomwiki-web → Custom domains → Add custom domain → `loomwiki.cortech.online`**.
+In the dashboard: **Workers & Pages → loomwiki-web → Settings → Domains & Routes → Add → Custom domain → `loomwiki.cortech.online`**.
 
-(The Cloudflare dashboard handles the certificate provisioning automatically. Wait for the certificate to go active before attempting your first deploy; usually < 1 minute.)
+(The Cloudflare dashboard handles the certificate provisioning automatically. Wait for the certificate to go active; usually < 1 minute.)
+
+> **Already running an older deploy?** If a `loomwiki-web` **Pages**
+> project already exists from a pre-#76 deploy, do **not** follow this
+> section as-is — a Worker cannot be created with the same name as an
+> existing Pages project. Follow the **One-time production cutover**
+> section below first.
 
 ### 8. Apply migrations + deploy
 
 ```sh
 pnpm migrate:remote          # D1 migrations 0001–0003
-pnpm deploy:worker           # worker (loomwiki-api) — claims the /api/* route
-pnpm deploy:web              # Pages (loomwiki-web) — astro build + wrangler pages deploy
-# or both:
+pnpm deploy:worker           # API Worker (loomwiki-api) — claims the /api/* route
+pnpm deploy:web              # Web Worker (loomwiki-web) — astro build + wrangler deploy
+# or both (correct order: API first so the web Worker's API service binding resolves):
 pnpm deploy:all
 ```
 
