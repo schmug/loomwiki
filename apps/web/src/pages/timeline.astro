@@ -1,0 +1,95 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Unified timeline (issue #32) — owner-only chronological feed of every
+// consequential workspace event (audit-log actions + ingest runs, plus
+// scheduled prompts and Issue threads once those producers land).
+//
+// The v0.1 follow-through to ADR-0007 §e ("JSON-only access in v0.0.1;
+// no UI"). Server-renders the AppShell + an SSR-fetched first page;
+// the React island owns the source pills and the day/week/month vs
+// feed toggle. Owner-gated server-side here (the API is owner-gated
+// independently, so a non-owner just sees the gate copy, not data).
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import { TimelineFeed } from "@/components/timeline/TimelineFeed";
+import Layout from "@/layouts/Layout.astro";
+import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+import type { TimelineEntry } from "@loomwiki/schema";
+
+interface TimelinePayload {
+  entries: TimelineEntry[];
+  next_cursor: string | null;
+}
+
+const env = Astro.locals.runtime?.env;
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+const isOwner = me.workspace.owner_id === me.user.id;
+
+// Only the owner can read /api/timeline (the API 403s otherwise). Fetch
+// the first page SSR for owners; non-owners see the gate copy and we
+// skip the call entirely.
+let timeline: TimelinePayload = { entries: [], next_cursor: null };
+if (isOwner) {
+  try {
+    timeline = await ssrApiGet<TimelinePayload>(Astro.request, "/api/timeline", env);
+  } catch (err) {
+    if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+    // A 403 here would mean the owner check disagrees with /api/me;
+    // treat any non-auth API error as an empty feed rather than a hard
+    // 500 so the page still renders its chrome + empty state.
+    if (!(err instanceof SsrApiError)) throw err;
+  }
+}
+
+const rooms = me.rooms.map((r) => ({ id: r.id, slug: r.slug }));
+---
+
+<Layout title={`Timeline — ${me.workspace.name}`}>
+  <AppShell
+    workspaceName={me.workspace.name}
+    userDisplayName={me.user.display_name}
+    isOwner={isOwner}
+  >
+    <RoomList slot="sidebar" client:idle workspaceId={me.workspace.id} rooms={me.rooms} />
+    <div slot="main" class="flex h-full min-h-0 flex-col">
+      <header class="flex items-center justify-between border-b border-border px-6 py-4">
+        <div>
+          <h1 class="text-lg font-semibold">Timeline</h1>
+          <p class="text-xs text-muted-foreground">
+            Everything moving in this workspace — newest first. Owner only.
+          </p>
+        </div>
+      </header>
+      <div class="min-h-0 flex-1 overflow-hidden">
+        {
+          isOwner ? (
+            <TimelineFeed
+              client:load
+              initialEntries={timeline.entries}
+              initialNextCursor={timeline.next_cursor}
+              rooms={rooms}
+            />
+          ) : (
+            <div class="grid h-full place-items-center p-8 text-center">
+              <div class="max-w-md space-y-2">
+                <h2 class="text-lg font-semibold">Owner only</h2>
+                <p class="text-sm text-muted-foreground">
+                  The workspace timeline is visible to the workspace owner only.
+                </p>
+              </div>
+            </div>
+          )
+        }
+      </div>
+    </div>
+  </AppShell>
+</Layout>

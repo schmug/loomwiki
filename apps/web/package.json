@@ -15,6 +15,7 @@
   "dependencies": {
     "@astrojs/cloudflare": "^12.2.0",
     "@astrojs/react": "^4.1.2",
+    "@loomwiki/schema": "workspace:*",
     "@loomwiki/shared": "workspace:*",
     "@milkdown/core": "^7.5.8",
     "@milkdown/ctx": "^7.5.8",

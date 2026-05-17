@@ -36,8 +36,9 @@ const pathname = new URL(Astro.request.url).pathname;
 const onWiki = pathname.startsWith("/w");
 const onAsk = pathname.startsWith("/ask");
 const onInbox = pathname.startsWith("/inbox");
+const onTimeline = pathname.startsWith("/timeline");
 const onSettings = pathname.startsWith("/settings");
-const onChat = !onWiki && !onAsk && !onInbox && !onSettings;
+const onChat = !onWiki && !onAsk && !onInbox && !onTimeline && !onSettings;
 ---
 
 <style>
@@ -132,6 +133,22 @@ const onChat = !onWiki && !onAsk && !onInbox && !onSettings;
           <span>Inbox</span>
           <InboxBadge client:idle />
         </a>
+        {
+          isOwner && (
+            <a
+              href="/timeline"
+              class:list={[
+                "flex flex-1 items-center justify-center gap-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+                onTimeline
+                  ? "bg-background text-foreground"
+                  : "text-muted-foreground hover:bg-background/60",
+              ]}
+              aria-current={onTimeline ? "page" : undefined}
+            >
+              <span>Timeline</span>
+            </a>
+          )
+        }
         {
           isOwner && (
             <a
