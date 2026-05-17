@@ -11,25 +11,20 @@ import Layout from "@/layouts/Layout.astro";
 import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
 import type { CurrentUserPayload, WikiPagePayload, WikiTreeResponse } from "@/lib/types";
 
-const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 let tree: WikiTreeResponse;
 let indexPage: WikiPagePayload | null = null;
 
 try {
-  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
-  tree = await ssrApiGet<WikiTreeResponse>(Astro.request, "/api/wiki-tree", env);
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+  tree = await ssrApiGet<WikiTreeResponse>(Astro.request, "/api/wiki-tree");
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
   throw err;
 }
 
 try {
-  const data = await ssrApiGet<{ page: WikiPagePayload }>(
-    Astro.request,
-    "/api/wiki/_index.md",
-    env,
-  );
+  const data = await ssrApiGet<{ page: WikiPagePayload }>(Astro.request, "/api/wiki/_index.md");
   indexPage = data.page;
 } catch (err) {
   if (err instanceof SsrApiError && err.status === 404) {

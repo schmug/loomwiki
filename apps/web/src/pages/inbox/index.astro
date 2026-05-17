@@ -11,13 +11,12 @@ import Layout from "@/layouts/Layout.astro";
 import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
 import type { CurrentUserPayload, ProposalsListResponse } from "@/lib/types";
 
-const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 let proposals: ProposalsListResponse;
 try {
   [me, proposals] = await Promise.all([
-    ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env),
-    ssrApiGet<ProposalsListResponse>(Astro.request, "/api/proposals?status=pending", env),
+    ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me"),
+    ssrApiGet<ProposalsListResponse>(Astro.request, "/api/proposals?status=pending"),
   ]);
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");

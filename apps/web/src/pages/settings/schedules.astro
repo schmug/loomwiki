@@ -10,10 +10,9 @@ import Layout from "@/layouts/Layout.astro";
 import { SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
 import type { CurrentUserPayload } from "@/lib/types";
 
-const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 try {
-  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
   throw err;
