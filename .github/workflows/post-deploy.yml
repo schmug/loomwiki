@@ -43,11 +43,31 @@ jobs:
       CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
       CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
+      # Guard: the live smoke needs CF Access service-token secrets to get
+      # past the Access login page. When they are unset the curl receives the
+      # Access HTML challenge instead of JSON and every step fails, which used
+      # to file a duplicate noise issue on every merge to main. If either
+      # secret is empty, emit an actionable message and skip the smoke (the
+      # job still succeeds — a missing operator secret is not a deploy
+      # failure). Subsequent steps gate on steps.guard.outputs.skip.
+      - name: Guard on CF Access secrets
+        id: guard
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_ACCESS_CLIENT_ID}" ] || [ -z "${CF_ACCESS_CLIENT_SECRET}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::post-deploy smoke skipped: CF Access service-token secrets not configured — set CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET in repo settings (Cloudflare Zero Trust -> Access -> Service Auth)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Wait for deploy to propagate
+        if: steps.guard.outputs.skip != 'true'
         run: sleep 120
 
       - name: Verify /api/health (commit + ok flag)
         id: health
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           BODY=$(curl -fsS --max-time 5 \
@@ -60,6 +80,7 @@ jobs:
 
       - name: Verify security headers (CSP, X-Frame-Options)
         id: headers
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           HEADERS=$(curl -fsSI --max-time 10 "${BASE_URL}/")
@@ -68,6 +89,7 @@ jobs:
 
       - name: Verify /api/me (authenticated)
         id: me
+        if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
           BODY=$(curl -fsS --max-time 5 \
@@ -102,11 +124,32 @@ jobs:
               ``,
               `_Filed automatically by the post-deploy workflow._`,
             ].join("\n");
-            await github.rest.issues.create({
+            // De-dupe: a genuine smoke failure tends to recur on every merge
+            // until fixed. Rather than open a fresh issue each run, reuse the
+            // existing open post-deploy/automated issue and append a comment.
+            const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title,
-              body,
-              assignees: [OWNER],
-              labels: ["post-deploy", "automated"],
+              state: "open",
+              labels: "post-deploy,automated",
+              per_page: 1,
             });
+            if (existing.data.length > 0) {
+              const issue = existing.data[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Post-deploy verifier failed again for commit \`${SHA}\`.\n\n**Run:** ${RUN_URL}\n\n_Appended automatically; the original report is above._`,
+              });
+              core.notice(`Post-deploy failure recorded on existing issue #${issue.number} (de-duped).`);
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                assignees: [OWNER],
+                labels: ["post-deploy", "automated"],
+              });
+            }
