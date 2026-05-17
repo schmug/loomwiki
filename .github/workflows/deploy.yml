@@ -143,7 +143,9 @@ jobs:
   # blind 120s sleep against a non-deploy — issue #78). Asserts:
   #   1. /api/health is OK, fast (<5s), and reports the SHA we just shipped.
   #   2. Security headers are present on the front door (CSP, X-Frame-Options).
-  #   3. /api/me returns 200 + { user, workspace } when service-token auth is used.
+  # (A /api/me check was intentionally dropped — a CF Access service token
+  # is a machine identity with no email claim, so the worker auth cannot
+  # resolve it to a user by design; see the note above the issue-filer.)
   # On any failure, files/append to a single GitHub issue (de-duped).
   #
   # CF Access service-token secrets (provisioned via Cloudflare Zero Trust
@@ -239,17 +241,15 @@ jobs:
           grep -i '^Content-Security-Policy:' "$resp_headers" > /dev/null
           grep -i '^X-Frame-Options:[[:space:]]*DENY' "$resp_headers" > /dev/null
 
-      - name: Verify /api/me (authenticated)
-        id: me
-        if: steps.guard.outputs.skip != 'true'
-        run: |
-          set -euo pipefail
-          BODY=$(curl -fsS --max-time 5 \
-            -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
-            -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
-            "${BASE_URL}/api/me")
-          echo "$BODY" | jq -e '.data.user' > /dev/null
-          echo "$BODY" | jq -e '.data.workspace' > /dev/null
+      # Note: a /api/me check was intentionally removed. A Cloudflare
+      # Access *service token* (what CI uses) authenticates as a machine,
+      # not a person, so the verified Access JWT carries no `email` claim
+      # and the worker auth (apps/worker/src/lib/auth.ts) cannot resolve
+      # it to a user/workspace by design — /api/me would always 401 under
+      # service-token auth. The smoke proves the deploy shipped (health +
+      # matching commit) and the front door is hardened (security
+      # headers); authenticated *user* flows are covered by unit/route
+      # tests, not the live service-token smoke.
 
       - name: File issue on failure
         if: failure()
@@ -270,7 +270,6 @@ jobs:
               `Steps in \`.github/workflows/deploy.yml\` (smoke job):`,
               `- /api/health (200 + ok:true + matching commit, <5s)`,
               `- Security headers (Content-Security-Policy, X-Frame-Options: DENY)`,
-              `- /api/me (200 + JSON with user + workspace fields)`,
               ``,
               `Inspect the run logs above to identify which step failed.`,
               ``,
