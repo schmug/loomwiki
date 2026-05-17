@@ -23,10 +23,9 @@ interface TimelinePayload {
   next_cursor: string | null;
 }
 
-const env = Astro.locals.runtime?.env;
 let me: CurrentUserPayload;
 try {
-  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me", env);
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
 } catch (err) {
   if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
   throw err;
@@ -40,7 +39,7 @@ const isOwner = me.workspace.owner_id === me.user.id;
 let timeline: TimelinePayload = { entries: [], next_cursor: null };
 if (isOwner) {
   try {
-    timeline = await ssrApiGet<TimelinePayload>(Astro.request, "/api/timeline", env);
+    timeline = await ssrApiGet<TimelinePayload>(Astro.request, "/api/timeline");
   } catch (err) {
     if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
     // A 403 here would mean the owner check disagrees with /api/me;
