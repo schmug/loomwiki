@@ -1027,11 +1027,104 @@ agentsmd.update | workspace_settings.update | manual_ingest.trigger`.
 The web UI viewer is a v0.1 deliverable — `docs/RELEASE.md`
 "Roadmap to v0.1" tracks it.
 
+## Continuous deployment (CD)
+
+Pushes to `main` are deployed automatically by
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). This
+replaced the old "blind 120s `sleep` against a deploy that never
+happened" — there is now a **real deploy job**, and the post-deploy
+live smoke is gated to run only *after* a successful deploy
+(issue #78).
+
+### Pipeline shape
+
+| Job | Default | What it does |
+|---|---|---|
+| `deploy-api` | **on** | `pnpm migrate:remote` (D1 migrations, forward-only, idempotent) then `pnpm deploy:worker` (`wrangler deploy` of `loomwiki-api`). |
+| `deploy-web` | **off** | `pnpm deploy:web` (`astro build && wrangler deploy` of `loomwiki-web`). `needs: deploy-api`. Gated behind `WEB_CD_ENABLED` (see below). |
+| `smoke` | on | The post-deploy live verifier. `needs: deploy-api`, so it runs only after a successful deploy and its `.data.commit == <merged SHA>` assertion can finally pass. Preserves the #74 CF Access secret-guard + the issue de-dupe. |
+
+`deploy-api` runs the D1 migrations as an explicit step **before**
+`wrangler deploy`, matching the manual deploy order documented in
+§8 (`pnpm migrate:remote` then `pnpm deploy:worker`). Migrations stay
+forward-only — a new migration is a new file, never an edit to a
+committed one (CLAUDE.md). The worker `deploy` script itself is left
+as just `wrangler deploy`, so the local/manual contract is unchanged.
+
+### Required GitHub repository secrets
+
+Configure at **Settings → Secrets and variables → Actions →
+Secrets** (repository scope, not environment-scoped):
+
+- `CLOUDFLARE_API_TOKEN` — a Cloudflare API token with **Workers
+  Scripts: Edit** and **D1: Edit** for the deploy account. `wrangler`
+  reads it from the job env; it is **never** echoed, logged, or
+  interpolated into a command argument by the workflow. Create it at
+  Cloudflare dashboard → **My Profile → API Tokens → Create Token**
+  (Edit Cloudflare Workers template, scoped to the account).
+- `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account id `wrangler`
+  targets. Safe to expose (it's an account identifier), but kept as a
+  secret for parity with the token. This is the same value as
+  `CF_ACCOUNT_ID` in `wrangler.jsonc` `vars`.
+- `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` — the Access
+  service-token pair the post-deploy smoke uses (see
+  **Post-deploy verifier setup** below).
+
+### Required GitHub repository variable
+
+Configure at **Settings → Secrets and variables → Actions →
+Variables**:
+
+- `WEB_CD_ENABLED` — set to the string `"true"` to enable the
+  `deploy-web` job. **Leave it unset (or `"false"`) until the one-time
+  Pages → Worker production cutover is complete.** The web app deploys
+  as a Worker post-#76, but an existing deploy must finish the cutover
+  *before* the first automated `wrangler deploy` of `loomwiki-web`,
+  otherwise the deploy collides on the name and the live site breaks.
+  See **One-time production cutover: Pages project → Worker** above for
+  the full procedure.
+
+### Enabling web CD after the cutover
+
+1. Complete the **One-time production cutover** (above): detach the
+   custom domain from the retired Pages project, delete the Pages
+   project, run `pnpm deploy:web` once manually from a clean tree, and
+   attach the custom domain to the new Worker.
+2. Verify the live site (`curl -s https://loomwiki.cortech.online/api/health`
+   and a browser sign-in).
+3. Then, and only then, set repo variable `WEB_CD_ENABLED=true`. The
+   next push to `main` will deploy `loomwiki-web` automatically (after
+   `deploy-api`, so the `API` service binding resolves).
+
+A fresh deploy on a clean account that never had a Pages project can
+skip the cutover and set `WEB_CD_ENABLED=true` immediately after the
+first manual `pnpm deploy:web` (which creates the Worker + lets you
+attach the custom domain).
+
+### Operator action required
+
+`deploy-api` and the smoke run on every push to `main`, but they
+**no-op safely until the secrets/vars are set**:
+
+- Without `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` the deploy
+  jobs fail loudly (a real deploy genuinely cannot proceed) — set these
+  to turn CD on.
+- Without `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` the smoke
+  **skips** (the #74 guard — a missing operator secret is not a deploy
+  failure), so no noise issue is filed.
+- `deploy-web` stays skipped until `WEB_CD_ENABLED=true`.
+
+Rollback automation / blue-green / canary are out of scope for the
+single-env v0.0.1 dogfood; tracked as future work in `docs/RELEASE.md`.
+
 ## Post-deploy verifier setup
 
-The post-deploy verifier (`pnpm smoke:live` invoked from CI on
-deploy-success) hits the live deploy with a Cloudflare Access
-service token and exercises the M7 happy path end-to-end. Two
+The post-deploy verifier is the `smoke` job in
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). It
+runs only after the `deploy-api` job succeeds (`needs: deploy-api`),
+hits the live deploy with a Cloudflare Access service token, and
+asserts the live `/api/health` reports the just-shipped commit SHA
+plus the security-header and `/api/me` checks. Two
 GitHub repo secrets are required:
 
 - `CF_ACCESS_CLIENT_ID` — the client id of the Access service token
