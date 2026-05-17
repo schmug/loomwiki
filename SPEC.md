@@ -98,7 +98,7 @@ Resolve these as you go. **Bold = blocking for v0.0.1.**
                                   │ JWT (CF-Access-Jwt-Assertion)
                                   ▼
       ┌──────────────┐    ┌────────────────────┐    ┌──────────────────┐
-      │ Web (Pages)  │◀──▶│  API Worker (Hono) │◀──▶│ MCP/agent endpts │
+      │ Web (Worker) │◀──▶│  API Worker (Hono) │◀──▶│ MCP/agent endpts │
       └──────┬───────┘    └────────┬───────────┘    └──────────────────┘
              │ WebSocket           │
              ▼                     ▼
@@ -655,7 +655,7 @@ Rationale:
 - Chat and editor are islands that hydrate.
 - Smaller JS payload than full SPA.
 - Better SEO if you ever expose public wikis.
-- Cloudflare Pages first-class support.
+- First-class Cloudflare support via `@astrojs/cloudflare` (was Pages pre-v13; v13+ deploys as a Worker — see DEPLOY.md).
 
 Alternative: SvelteKit (you've used it in WikiForge; fastest for you to ship; Cloudflare adapter is solid).
 
@@ -844,6 +844,7 @@ Each milestone is a self-contained chunk sized for one Claude Code session at `x
 - App shell, Access-aware login flow.
 - Room list + room view + WS client.
 - Markdown rendering for messages.
+- **Deploy topology**: `apps/web` deploys as a Cloudflare **Worker** (`@astrojs/cloudflare` v13 with the `assets` binding + an `API` service binding to `loomwiki-api`), not a Pages project. The full deploy + one-time Pages→Worker cutover procedure is in DEPLOY.md.
 - **DoD**: chatting in the browser end-to-end works; reload preserves history.
 
 ### M4 — Wiki read/write + Artifacts integration (one session)
