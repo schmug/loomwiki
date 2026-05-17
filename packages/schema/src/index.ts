@@ -655,3 +655,126 @@ export const PatchScheduledActionRequestSchema = z
     message: "at least one field required",
   });
 export type PatchScheduledActionRequest = z.infer<typeof PatchScheduledActionRequestSchema>;
+
+// ---------- Unified timeline (issue #32) ----------
+//
+// The timeline is a *view*, not a table — there is no `timeline`
+// migration. `/api/timeline` server-side-unions four data origins
+// (`audit_log`, `ingest_runs`, `scheduled_actions`, and the
+// not-yet-existing `issue_threads` from #30) into a single
+// chronological feed.
+//
+// `TimelineSource` is the data-origin discriminant the React island
+// switches on for rendering. It is distinct from the UI *filter pills*
+// (`chat | wiki | ingest | scheduled | issue`): the worker maps a
+// pill-name `sources` query param onto these origins (e.g. the `wiki`
+// pill selects `audit` rows whose `resource_kind` is vault-content).
+//
+// Every entry carries `id` (a UUIDv7 — the cursor token) and `at`
+// (unix epoch seconds — the timestamp the entry renders at; per
+// Q-tl-5 ingest/scheduled render at their status-change time, not
+// always `created_at`). Times stay unix-seconds on the wire; the
+// viewer converts to local TZ client-side (Q-tl-3).
+
+export const TimelineSourceSchema = z.enum(["audit", "ingest", "scheduled", "issue"]);
+export type TimelineSource = z.infer<typeof TimelineSourceSchema>;
+
+// The pill names the web UI shows. The worker accepts these in the
+// `sources` query param (comma-separated) and maps them onto origins.
+// `lint` is intentionally absent — Q-tl-1 resolved to "drop until a
+// producer exists" (no dead filters).
+export const TIMELINE_FILTER_PILLS = ["chat", "wiki", "ingest", "scheduled", "issue"] as const;
+export const TimelineFilterPillSchema = z.enum(TIMELINE_FILTER_PILLS);
+export type TimelineFilterPill = z.infer<typeof TimelineFilterPillSchema>;
+
+const TimelineEntryBase = {
+  // UUIDv7 of the originating row — also the pagination cursor token.
+  id: Uuidv7Schema,
+  // Unix epoch seconds. The instant this entry renders at on the feed.
+  at: EpochSeconds,
+};
+
+// `audit` — an `audit_log` row. `resource_kind` carries the original
+// audit taxonomy so the island can sub-label (proposal vs agentsmd vs
+// byok). `deep_link` points at the audit row's diff view.
+export const AuditTimelineEntrySchema = z.object({
+  ...TimelineEntryBase,
+  source: z.literal("audit"),
+  action: AuditActionSchema,
+  resource_kind: AuditResourceKindSchema,
+  resource_id: z.string().max(128).nullable(),
+  actor_user_id: Uuidv7Schema.nullable(),
+  // The pill this row surfaces under, derived server-side from
+  // resource_kind. `null` = no pill (admin-only actions like byok /
+  // workspace_settings stay in the unfiltered feed but match no pill).
+  pill: TimelineFilterPillSchema.nullable(),
+  created_at: EpochSeconds,
+});
+export type AuditTimelineEntry = z.infer<typeof AuditTimelineEntrySchema>;
+
+// `ingest` — an `ingest_runs` row. Renders at the status-change time
+// (`finished_at` when terminal, else `started_at` — Q-tl-5). Deep-links
+// to the originating room.
+export const IngestTimelineEntrySchema = z.object({
+  ...TimelineEntryBase,
+  source: z.literal("ingest"),
+  room_id: Uuidv7Schema,
+  status: IngestRunStatusSchema,
+  triggered_by: IngestRunTriggerSchema,
+  summary: z.string().max(280).nullable(),
+  error: z.string().max(2000).nullable(),
+  started_at: EpochSeconds,
+  finished_at: EpochSeconds.nullable(),
+});
+export type IngestTimelineEntry = z.infer<typeof IngestTimelineEntrySchema>;
+
+// `scheduled` — a `scheduled_actions` row (issue #33; the issue body's
+// `scheduled_prompts` name is stale — #33 shipped this as
+// `scheduled_actions`). Renders at `last_fired_at` if it has fired,
+// else `next_fire_at` (the upcoming fire). Deep-links to the room.
+export const ScheduledTimelineEntrySchema = z.object({
+  ...TimelineEntryBase,
+  source: z.literal("scheduled"),
+  room_id: Uuidv7Schema,
+  kind: ScheduledActionKindSchema,
+  status: ScheduledActionStatusSchema,
+  prompt_preview: z.string().max(280),
+  next_fire_at: EpochSeconds,
+  last_fired_at: EpochSeconds.nullable(),
+  created_at: EpochSeconds,
+});
+export type ScheduledTimelineEntry = z.infer<typeof ScheduledTimelineEntrySchema>;
+
+// `issue` — an `issue_threads` row (#30). The table does not exist yet;
+// this shape is forward-declared so the island + worker need no change
+// when #30 lands. Renders at `last_status_change` (Q-tl-5) but keeps
+// `created_at` so a future "full history" toggle can group on it.
+export const IssueTimelineStatusSchema = z.enum(["open", "in-progress", "blocked", "closed"]);
+export type IssueTimelineStatus = z.infer<typeof IssueTimelineStatusSchema>;
+
+export const IssueTimelineEntrySchema = z.object({
+  ...TimelineEntryBase,
+  source: z.literal("issue"),
+  issue_number: z.number().int().positive(),
+  repo: z.string().min(1).max(200),
+  status: IssueTimelineStatusSchema,
+  chat_room_id: Uuidv7Schema.nullable(),
+  wiki_slug: z.string().max(256).nullable(),
+  created_at: EpochSeconds,
+  last_status_change: EpochSeconds,
+});
+export type IssueTimelineEntry = z.infer<typeof IssueTimelineEntrySchema>;
+
+export const TimelineEntrySchema = z.discriminatedUnion("source", [
+  AuditTimelineEntrySchema,
+  IngestTimelineEntrySchema,
+  ScheduledTimelineEntrySchema,
+  IssueTimelineEntrySchema,
+]);
+export type TimelineEntry = z.infer<typeof TimelineEntrySchema>;
+
+export const TimelineResponseSchema = z.object({
+  entries: z.array(TimelineEntrySchema),
+  next_cursor: Uuidv7Schema.nullable(),
+});
+export type TimelineResponse = z.infer<typeof TimelineResponseSchema>;

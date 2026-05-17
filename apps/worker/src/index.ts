@@ -25,6 +25,7 @@ import { searchRoute } from "./routes/search.js";
 import { agentsMdSettingsRoute } from "./routes/settings/agentsmd.js";
 import { byokSettingsRoute } from "./routes/settings/byok.js";
 import { workspaceSettingsRoute } from "./routes/settings/workspace.js";
+import { timelineRoute } from "./routes/timeline.js";
 import { wikiRoute } from "./routes/wiki.js";
 import { workspacesRoute } from "./routes/workspaces.js";
 import { scheduled } from "./scheduled.js";
@@ -68,6 +69,8 @@ app.use("/api/_admin/digest/*", authMiddleware);
 // M8: settings (BYOK, AGENTS.md, workspace) + audit log read.
 app.use("/api/settings/*", authMiddleware);
 app.use("/api/_admin/audit", authMiddleware);
+// Issue #32: unified timeline read API (owner-gated inside the route).
+app.use("/api/timeline", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -97,6 +100,9 @@ app.route("/api/settings/byok", byokSettingsRoute);
 app.route("/api/settings/agentsmd", agentsMdSettingsRoute);
 app.route("/api/settings/workspace", workspaceSettingsRoute);
 app.route("/api", adminAuditRoute);
+// Issue #32: unified timeline view (audit + ingest, graceful-empty
+// scheduled/issue). Mounted at /api so the route declares /timeline.
+app.route("/api", timelineRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),
