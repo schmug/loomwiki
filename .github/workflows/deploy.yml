@@ -89,8 +89,21 @@ jobs:
       - name: Apply D1 migrations (forward-only)
         run: pnpm migrate:remote
 
-      - name: Deploy API Worker (loomwiki-api)
-        run: pnpm deploy:worker
+      # `pnpm deploy:worker` is just `wrangler deploy` (no tag). The
+      # /api/health endpoint reports CF_VERSION_METADATA.tag and the
+      # smoke job asserts it equals the deployed git SHA (see #65 /
+      # commit 792cfa7 and apps/worker/src/routes/health.ts). Without
+      # --tag, .tag is empty and health falls back to the deployment
+      # UUID (.id), which never equals github.sha → smoke fails forever.
+      # So CI deploys with --tag set to the commit SHA. github.sha is a
+      # trusted runner-provided value (a 40-char hex SHA, not
+      # attacker-controlled event text); passed via env + quoted per
+      # the workflow-injection-safe pattern. The manual `deploy:worker`
+      # script is intentionally left untouched (operator contract).
+      - name: Deploy API Worker (loomwiki-api, tagged with git SHA)
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: pnpm --filter @loomwiki/worker exec wrangler deploy --config ../../wrangler.jsonc --tag "$DEPLOY_SHA"
 
   deploy-web:
     name: deploy loomwiki-web (gated)
