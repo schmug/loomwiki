@@ -2,12 +2,10 @@
 
 // SSR-side fetch helpers for Astro pages. Two transport paths:
 //
-//   1. Service binding (preferred in production). On Cloudflare Pages,
-//      a same-host fetch from SSR back to `loomwiki.cortech.online/api/*`
-//      gets short-circuited to the Pages runtime — Worker routes on
-//      the same hostname are NOT consulted, so the API worker never
-//      sees the request and Pages returns 404. The documented fix is
-//      a Pages → Worker service binding (declared in
+//   1. Service binding (preferred in production). A same-host fetch
+//      from SSR back to `loomwiki.cortech.online/api/*` can be
+//      short-circuited by the runtime and never reach the API worker.
+//      The fix is a Worker → Worker service binding (declared in
 //      `apps/web/wrangler.jsonc` as
 //      `services: [{ binding: "API", service: "loomwiki-api" }]`).
 //      When the binding is present, `env.API.fetch(...)` bypasses
@@ -19,17 +17,22 @@
 //      Same shape used as a fallback in any prod environment without
 //      the service binding configured.
 //
-// Callers pass `Astro.locals.runtime?.env` so the helper can pick the
-// right path. Dev pages can omit it; only the production deploy has a
-// runtime with bindings.
+// As of @astrojs/cloudflare v13 the per-request `Astro.locals.runtime`
+// object is gone; the Workers `env` is now a module-scoped import
+// (`cloudflare:workers`). The helper resolves the `API` binding itself
+// so call sites no longer thread `env` through. When the binding is
+// absent (local dev, or any deploy without it) `env.API` is undefined
+// and we fall back to the proxied bare fetch.
+
+import { env } from "cloudflare:workers";
 
 import type { ApiResult } from "@loomwiki/shared";
 
 /**
- * Shape of the relevant subset of `Astro.locals.runtime.env` in
- * production. Only the `API` service binding matters here; bindings
- * we don't reference (D1, KV, etc.) are owned by the API worker, not
- * the Pages worker.
+ * Shape of the relevant subset of the Workers `env` we read from SSR.
+ * Only the `API` service binding matters here; bindings we don't
+ * reference (D1, KV, etc.) are owned by the API worker, not the web
+ * worker. Mirrored in `env.d.ts` as the `cloudflare:workers` `Env`.
  */
 export interface SsrRuntimeEnv {
   API?: { fetch: (request: Request) => Promise<Response> };
@@ -56,11 +59,12 @@ export class SsrApiError extends Error {
  * so Cloudflare Access (or the local-dev bypass) gates this hop the
  * same way the browser would.
  */
-export async function ssrApiGet<T>(
-  request: Request,
-  path: string,
-  env?: SsrRuntimeEnv,
-): Promise<T> {
+export async function ssrApiGet<T>(request: Request, path: string): Promise<T> {
+  // `env` is the module-scoped Workers binding object (v13+). The
+  // `API` service binding is present in production deploys that
+  // declare it; absent in local dev (where the Vite proxy fallback
+  // handles `/api/*`).
+  const apiBinding = env.API;
   const headers: Record<string, string> = {};
   const cookie = request.headers.get("Cookie");
   if (cookie) headers.Cookie = cookie;
@@ -105,7 +109,7 @@ export async function ssrApiGet<T>(
   // the call goes worker-to-worker without traversing the public edge —
   // bypasses the same-host loopback gotcha that returns 404 from Pages
   // for `/api/*` paths.
-  const res = env?.API ? await env.API.fetch(fetchRequest) : await fetch(fetchRequest);
+  const res = apiBinding ? await apiBinding.fetch(fetchRequest) : await fetch(fetchRequest);
 
   if (res.status === 401) throw new SsrAuthRequiredError();
 

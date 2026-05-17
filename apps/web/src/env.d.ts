@@ -1,22 +1,21 @@
 /// <reference path="../.astro/types.d.ts" />
 /// <reference types="astro/client" />
 
-// Type augmentation for `Astro.locals.runtime` injected by
-// `@astrojs/cloudflare`. The adapter populates this at request time
-// with the Pages worker's runtime context (env bindings, cf, ctx).
+// @astrojs/cloudflare v13 ships its own `App.Locals` augmentation
+// (`{ cfContext: ExecutionContext }`) and removed the old
+// `Astro.locals.runtime` object. Cloudflare bindings are now read via
+// the module-scoped `import { env } from "cloudflare:workers"` instead.
 //
-// We only declare the bindings we actually read from SSR — the API
-// service binding (Pages → loomwiki-api worker, see
-// apps/web/wrangler.jsonc). Other bindings live on the API worker,
-// not on the Pages side, so they're intentionally absent here.
-declare namespace App {
-  interface Locals {
-    runtime?: {
-      env: {
-        API?: { fetch: (request: Request) => Promise<Response> };
-      };
-      cf?: unknown;
-      ctx: { waitUntil: (p: Promise<unknown>) => void };
-    };
-  }
+// Neither astro nor the adapter ships ambient types for the virtual
+// `cloudflare:workers` module that `astro check` (tsc) can see, and
+// `@cloudflare/workers-types` is an API-worker dependency that isn't
+// resolvable from this package. So we declare the single thing we use:
+// the module-scoped `env` value. In a full Workers project
+// `wrangler types` would generate a richer `Cloudflare.Env`; we only
+// read the `API` service binding from SSR, so we type just that. Other
+// bindings live on the API worker, not the web side.
+declare module "cloudflare:workers" {
+  export const env: {
+    API?: { fetch: (request: Request) => Promise<Response> };
+  };
 }

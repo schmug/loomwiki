@@ -15,13 +15,14 @@ const WORKER_DEV_URL = "http://127.0.0.1:8788";
 export default defineConfig({
   output: "server",
   adapter: cloudflare({
-    // Point the platform proxy at wrangler.dev.jsonc so it doesn't try
-    // to remote-proxy the AI / Artifacts / AI Search bindings (those are
-    // remote-only and require `wrangler login`). The dev config omits
-    // them; tests use typed fakes; live AI requires `wrangler dev
-    // --remote --config ../../wrangler.jsonc` from an authenticated
-    // shell.
-    platformProxy: { enabled: true, configPath: "../../wrangler.dev.jsonc" },
+    // @astrojs/cloudflare v13 removed `platformProxy`: `astro dev` /
+    // `astro preview` now run on the real workerd runtime via the
+    // Cloudflare Vite plugin. `configPath` points the adapter at this
+    // app's Workers config so bindings (the `API` service binding)
+    // resolve in dev exactly as in production. Remote-only bindings
+    // (AI / Artifacts / AI Search) live on the API worker, not here,
+    // so the web config stays binding-light.
+    configPath: "./wrangler.jsonc",
   }),
   integrations: [react()],
   server: { port: 4321 },
