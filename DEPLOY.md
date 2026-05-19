@@ -1041,7 +1041,7 @@ live smoke is gated to run only *after* a successful deploy
 | Job | Default | What it does |
 |---|---|---|
 | `deploy-api` | **on** | `pnpm migrate:remote` (D1 migrations, forward-only, idempotent) then `pnpm deploy:worker` (`wrangler deploy` of `loomwiki-api`). |
-| `deploy-web` | **off** | `pnpm deploy:web` (`astro build && wrangler deploy` of `loomwiki-web`). `needs: deploy-api`. Gated behind `WEB_CD_ENABLED` (see below). |
+| `deploy-web` | **on** | `pnpm deploy:web` (`astro build && wrangler deploy` of `loomwiki-web`). `needs: deploy-api`. Enabled via `WEB_CD_ENABLED=true` (see below). |
 | `smoke` | on | The post-deploy live verifier. `needs: deploy-api`, so it runs only after a successful deploy and its `.data.commit == <merged SHA>` assertion can finally pass. Preserves the #74 CF Access secret-guard + the issue de-dupe. |
 
 `deploy-api` runs the D1 migrations as an explicit step **before**
@@ -1076,30 +1076,34 @@ Configure at **Settings → Secrets and variables → Actions →
 Variables**:
 
 - `WEB_CD_ENABLED` — set to the string `"true"` to enable the
-  `deploy-web` job. **Leave it unset (or `"false"`) until the one-time
-  Pages → Worker production cutover is complete.** The web app deploys
-  as a Worker post-#76, but an existing deploy must finish the cutover
-  *before* the first automated `wrangler deploy` of `loomwiki-web`,
-  otherwise the deploy collides on the name and the live site breaks.
-  See **One-time production cutover: Pages project → Worker** above for
-  the full procedure.
+  `deploy-web` job. **Set to `"true"` for the reference deploy** (the
+  one-time Pages → Worker cutover for `loomwiki.cortech.online` is
+  complete — see **One-time production cutover: Pages project → Worker**
+  above). Operators on a clean-account fork with no prior Pages project
+  can set this immediately after the first manual `pnpm deploy:web`.
+  Operators mid-cutover on a fork should leave it unset until the
+  cutover procedure is done.
 
-### Enabling web CD after the cutover
+### Web CD is enabled
 
-1. Complete the **One-time production cutover** (above): detach the
-   custom domain from the retired Pages project, delete the Pages
-   project, run `pnpm deploy:web` once manually from a clean tree, and
-   attach the custom domain to the new Worker.
-2. Verify the live site (`curl -s https://loomwiki.cortech.online/api/health`
-   and a browser sign-in).
-3. Then, and only then, set repo variable `WEB_CD_ENABLED=true`. The
-   next push to `main` will deploy `loomwiki-web` automatically (after
-   `deploy-api`, so the `API` service binding resolves).
+The one-time Pages → Worker cutover for `loomwiki.cortech.online` is
+complete (PR #76). `WEB_CD_ENABLED` is set to `"true"` — every push to
+`main` now automatically deploys `loomwiki-web` after `deploy-api`
+succeeds.
 
-A fresh deploy on a clean account that never had a Pages project can
-skip the cutover and set `WEB_CD_ENABLED=true` immediately after the
-first manual `pnpm deploy:web` (which creates the Worker + lets you
-attach the custom domain).
+**To enable web CD on a new fork:**
+
+1. If you have an existing `loomwiki-web` Pages project, complete the
+   **One-time production cutover** (above): detach the custom domain,
+   delete the Pages project, run `pnpm deploy:web` once manually from a
+   clean tree, and attach the custom domain to the new Worker.
+   Fresh accounts with no prior Pages project skip straight to step 2.
+2. Verify the live site (`curl -s https://<your-domain>/api/health` and
+   a browser sign-in).
+3. Set repo variable `WEB_CD_ENABLED=true` (**Settings → Secrets and
+   variables → Actions → Variables**). The next push to `main` will
+   deploy `loomwiki-web` automatically after `deploy-api` (so the `API`
+   service binding resolves).
 
 ### Operator action required
 
