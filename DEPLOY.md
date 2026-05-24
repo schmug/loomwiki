@@ -1041,7 +1041,7 @@ live smoke is gated to run only *after* a successful deploy
 | Job | Default | What it does |
 |---|---|---|
 | `deploy-api` | **on** | `pnpm migrate:remote` (D1 migrations, forward-only, idempotent) then `pnpm deploy:worker` (`wrangler deploy` of `loomwiki-api`). |
-| `deploy-web` | **off** | `pnpm deploy:web` (`astro build && wrangler deploy` of `loomwiki-web`). `needs: deploy-api`. Gated behind `WEB_CD_ENABLED` (see below). |
+| `deploy-web` | **on** | `pnpm deploy:web` (`astro build && wrangler deploy` of `loomwiki-web`). `needs: deploy-api`. Controlled by `WEB_CD_ENABLED` (set to `"true"` for the reference deploy — cutover complete). |
 | `smoke` | on | The post-deploy live verifier. `needs: deploy-api`, so it runs only after a successful deploy and its `.data.commit == <merged SHA>` assertion can finally pass. Preserves the #74 CF Access secret-guard + the issue de-dupe. |
 
 `deploy-api` runs the D1 migrations as an explicit step **before**
@@ -1076,15 +1076,21 @@ Configure at **Settings → Secrets and variables → Actions →
 Variables**:
 
 - `WEB_CD_ENABLED` — set to the string `"true"` to enable the
-  `deploy-web` job. **Leave it unset (or `"false"`) until the one-time
-  Pages → Worker production cutover is complete.** The web app deploys
-  as a Worker post-#76, but an existing deploy must finish the cutover
-  *before* the first automated `wrangler deploy` of `loomwiki-web`,
-  otherwise the deploy collides on the name and the live site breaks.
-  See **One-time production cutover: Pages project → Worker** above for
-  the full procedure.
+  `deploy-web` job. **The reference dogfood deploy
+  (`loomwiki.cortech.online`) has this set to `"true"` — the one-time
+  Pages → Worker cutover is complete.** Operators on a fresh account
+  (no prior Pages project) set it to `"true"` after the first manual
+  `pnpm deploy:web`. Operators with an existing Pages project must
+  complete the **One-time production cutover** procedure below before
+  setting this to `"true"` — deploying before the cutover collides on
+  the Worker name and breaks the live site.
 
-### Enabling web CD after the cutover
+### Enabling web CD (for operators who haven't cut over yet)
+
+> **Reference deploy status:** the `loomwiki.cortech.online` cutover is
+> complete and `WEB_CD_ENABLED` is already `"true"`. Every push to `main`
+> deploys `loomwiki-web` automatically (after `deploy-api`). The steps
+> below apply only to operators enabling web CD for the first time.
 
 1. Complete the **One-time production cutover** (above): detach the
    custom domain from the retired Pages project, delete the Pages
@@ -1092,9 +1098,10 @@ Variables**:
    attach the custom domain to the new Worker.
 2. Verify the live site (`curl -s https://loomwiki.cortech.online/api/health`
    and a browser sign-in).
-3. Then, and only then, set repo variable `WEB_CD_ENABLED=true`. The
-   next push to `main` will deploy `loomwiki-web` automatically (after
-   `deploy-api`, so the `API` service binding resolves).
+3. Set repo variable `WEB_CD_ENABLED=true` in **GitHub Settings →
+   Secrets and variables → Actions → Variables**. The next push to
+   `main` will deploy `loomwiki-web` automatically (after `deploy-api`,
+   so the `API` service binding resolves).
 
 A fresh deploy on a clean account that never had a Pages project can
 skip the cutover and set `WEB_CD_ENABLED=true` immediately after the
@@ -1112,7 +1119,7 @@ attach the custom domain).
 - Without `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` the smoke
   **skips** (the #74 guard — a missing operator secret is not a deploy
   failure), so no noise issue is filed.
-- `deploy-web` stays skipped until `WEB_CD_ENABLED=true`.
+- `deploy-web` is skipped when `WEB_CD_ENABLED` is unset or `"false"`. For the reference deploy this is already `"true"`; see the variable section above.
 
 Rollback automation / blue-green / canary are out of scope for the
 single-env v0.0.1 dogfood; tracked as future work in `docs/RELEASE.md`.
