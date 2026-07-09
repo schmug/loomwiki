@@ -21,3 +21,9 @@ export {
 } from "./markdown-sanitize.js";
 export { chunkPageBySection, slugifyHeading, type WikiChunk } from "./markdown-chunk.js";
 export { parseCronExpr, nextFireAt, type ParsedCron } from "./cron.js";
+export {
+  parseSlashCommand,
+  isValidUtcDate,
+  type SlashCommand,
+  type SlashParseResult,
+} from "./slash-commands.js";
