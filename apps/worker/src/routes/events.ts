@@ -79,6 +79,23 @@ async function withAttendees(env: Env, row: EventRow): Promise<EventWithAttendee
   return { ...row, attendee_ids: await fetchAttendees(env, row.id) };
 }
 
+async function fetchAttendeesFor(env: Env, eventIds: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (eventIds.length === 0) return map;
+  const placeholders = eventIds.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    `SELECT event_id, user_id FROM event_attendees WHERE event_id IN (${placeholders}) ORDER BY user_id`,
+  )
+    .bind(...eventIds)
+    .all<{ event_id: string; user_id: string }>();
+  for (const r of rows.results) {
+    const list = map.get(r.event_id) ?? [];
+    list.push(r.user_id);
+    map.set(r.event_id, list);
+  }
+  return map;
+}
+
 async function readJsonBody(c: { req: { json: () => Promise<unknown> } }): Promise<unknown> {
   try {
     return await c.req.json();
@@ -147,10 +164,14 @@ export const eventsRoute = new Hono<AuthEnv>()
     const hasMore = parsed.length > LIST_LIMIT;
     const trimmed = hasMore ? parsed.slice(0, LIST_LIMIT) : parsed;
 
-    const events: EventWithAttendees[] = [];
-    for (const row of trimmed) {
-      events.push(await withAttendees(c.env, row));
-    }
+    const attendeeMap = await fetchAttendeesFor(
+      c.env,
+      trimmed.map((e) => e.id),
+    );
+    const events: EventWithAttendees[] = trimmed.map((e) => ({
+      ...e,
+      attendee_ids: attendeeMap.get(e.id) ?? [],
+    }));
     return c.json(apiOk({ events, hasMore }));
   })
 
