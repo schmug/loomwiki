@@ -13,6 +13,7 @@ import { adminAuditRoute } from "./routes/admin-audit.js";
 import { adminCronRoute } from "./routes/admin-cron.js";
 import { adminSearchRoute } from "./routes/admin-search.js";
 import { askRoute } from "./routes/ask.js";
+import { calendarRoute } from "./routes/calendar.js";
 import { digestRoute } from "./routes/digest.js";
 import { eventsRoute } from "./routes/events.js";
 import { healthRoute } from "./routes/health.js";
@@ -78,6 +79,7 @@ app.use("/api/tasks", authMiddleware);
 app.use("/api/tasks/*", authMiddleware);
 app.use("/api/events", authMiddleware);
 app.use("/api/events/*", authMiddleware);
+app.use("/api/calendar", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -112,6 +114,7 @@ app.route("/api", adminAuditRoute);
 app.route("/api", timelineRoute);
 app.route("/api", tasksRoute);
 app.route("/api", eventsRoute);
+app.route("/api", calendarRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),
