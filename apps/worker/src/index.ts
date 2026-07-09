@@ -14,6 +14,7 @@ import { adminCronRoute } from "./routes/admin-cron.js";
 import { adminSearchRoute } from "./routes/admin-search.js";
 import { askRoute } from "./routes/ask.js";
 import { digestRoute } from "./routes/digest.js";
+import { eventsRoute } from "./routes/events.js";
 import { healthRoute } from "./routes/health.js";
 import { ingestRoute } from "./routes/ingest.js";
 import { meRoute } from "./routes/me.js";
@@ -75,6 +76,8 @@ app.use("/api/timeline", authMiddleware);
 // v0.1 M9: tasks + events + calendar.
 app.use("/api/tasks", authMiddleware);
 app.use("/api/tasks/*", authMiddleware);
+app.use("/api/events", authMiddleware);
+app.use("/api/events/*", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -108,6 +111,7 @@ app.route("/api", adminAuditRoute);
 // scheduled/issue). Mounted at /api so the route declares /timeline.
 app.route("/api", timelineRoute);
 app.route("/api", tasksRoute);
+app.route("/api", eventsRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),
