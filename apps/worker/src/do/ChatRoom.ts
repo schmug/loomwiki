@@ -31,12 +31,15 @@ import {
   MAX_BODY_CHARS,
   PROTOCOL_VERSION,
   type ServerMsg,
+  type SlashParseResult,
   type WireMessage,
   id,
+  parseSlashCommand,
 } from "@loomwiki/shared";
 import type { Env } from "../env.js";
 import { type MirrorMessage, mirrorMessageToD1 } from "../lib/d1-mirror.js";
 import { RollingWindowLimiter } from "../lib/rate-limit.js";
+import { type SlashContext, execSlashCommand } from "../lib/slash-exec.js";
 import {
   appendMessage,
   applyDelete,
@@ -290,6 +293,28 @@ export class ChatRoom extends DurableObject<Env> {
       return;
     }
 
+    // v0.1 M9: deterministic slash commands. { matched: false } (including
+    // /ask and unknown /foo) falls through to the normal message path.
+    const slash = parseSlashCommand(env.body);
+    if (slash.matched) {
+      await this.handleSlash(ws, attachment, env, slash);
+      return;
+    }
+
+    await this.persistUserMessage(ws, attachment, env);
+  }
+
+  /**
+   * Durable-write + ack + broadcast + mirror for a user-authored message.
+   * Extracted from handleSend so slash commands can persist their invoking
+   * message (it becomes tasks/events.origin_message_id). Returns the new
+   * message id.
+   */
+  private async persistUserMessage(
+    ws: WebSocket,
+    attachment: WsAttachment,
+    env: { tempId: string; body: string; parentId?: string },
+  ): Promise<string> {
     const messageId = id();
     const createdAt = Math.floor(Date.now() / 1000);
     const parentId = env.parentId ?? null;
@@ -322,21 +347,65 @@ export class ChatRoom extends DurableObject<Env> {
       };
     });
 
-    if (!wireMessage) return;
+    if (wireMessage) {
+      this.broadcastExcept(ws, { kind: "message", message: wireMessage });
+      // D1 mirror: best-effort, off the ack critical path.
+      this.scheduleMirror({
+        id: messageId,
+        roomId: attachment.roomId,
+        userId: attachment.userId,
+        body: env.body,
+        parentId,
+        createdAt,
+        editedAt: null,
+        deletedAt: null,
+      });
+    }
 
-    this.broadcastExcept(ws, { kind: "message", message: wireMessage });
+    return messageId;
+  }
 
-    // D1 mirror: best-effort, off the ack critical path.
-    this.scheduleMirror({
-      id: messageId,
+  private async handleSlash(
+    ws: WebSocket,
+    attachment: WsAttachment,
+    env: { tempId: string; body: string; parentId?: string },
+    slash: SlashParseResult & { matched: true },
+  ): Promise<void> {
+    if (!slash.ok) {
+      // Sender-only feedback; the malformed command is never persisted.
+      sendError(ws, ErrorCodes.VALIDATION_FAILED, slash.error, env.tempId);
+      return;
+    }
+
+    // The invoking message persists first — it is the provenance record
+    // (tasks/events.origin_message_id) and the room sees what was typed.
+    const originMessageId = await this.persistUserMessage(ws, attachment, env);
+
+    const wsRow = await this.env.DB.prepare("SELECT workspace_id FROM rooms WHERE id = ?")
+      .bind(attachment.roomId)
+      .first<{ workspace_id: string }>();
+    if (!wsRow) {
+      // The route layer validated the room before the upgrade; a miss here
+      // means D1 drift. Fail loudly to the sender, keep the room quiet.
+      sendError(ws, ErrorCodes.INTERNAL_ERROR, "room not found in D1");
+      return;
+    }
+
+    const ctx: SlashContext = {
+      db: this.env.DB,
+      workspaceId: wsRow.workspace_id,
       roomId: attachment.roomId,
       userId: attachment.userId,
-      body: env.body,
-      parentId,
-      createdAt,
-      editedAt: null,
-      deletedAt: null,
-    });
+      originMessageId,
+      nowS: Math.floor(Date.now() / 1000),
+    };
+    const result = await execSlashCommand(ctx, slash.command);
+    if (result.ok) {
+      await this.injectMessage(attachment.userId, attachment.roomId, result.note);
+    } else {
+      // No tempId — the invoking message was already acked.
+      sendError(ws, ErrorCodes.VALIDATION_FAILED, result.error);
+    }
   }
 
   private async handleEdit(
@@ -496,30 +565,38 @@ export class ChatRoom extends DurableObject<Env> {
       return new Response("missing required fields", { status: 400 });
     }
 
+    await this.injectMessage(payload.userId, payload.roomId, payload.body);
+
+    return Response.json({ ok: true });
+  }
+
+  /**
+   * Append + broadcast(ALL) + mirror a message authored on someone's behalf
+   * (scheduled-actions tick, slash-command confirmations). Extracted from
+   * handleSysPost so in-DO callers skip the internal HTTP hop.
+   */
+  private async injectMessage(userId: string, roomId: string, body: string): Promise<void> {
     const messageId = id();
     const createdAt = Math.floor(Date.now() / 1000);
-    const parentId = payload.parentId ?? null;
 
-    // Persist roomId so the alarm path can recover it.
-    setRoomId(this.sql, payload.roomId);
+    setRoomId(this.sql, roomId);
 
     let wireMessage: WireMessage | null = null;
-
     await this.ctx.blockConcurrencyWhile(async () => {
       appendMessage(this.sql, {
         id: messageId,
-        userId: payload.userId,
-        body: payload.body,
-        parentId,
+        userId,
+        body,
+        parentId: null,
         createdAt,
         pendingMirror: true,
       });
       wireMessage = {
         id: messageId,
-        room_id: payload.roomId,
-        user_id: payload.userId,
-        body: payload.body,
-        parent_id: parentId,
+        room_id: roomId,
+        user_id: userId,
+        body,
+        parent_id: null,
         created_at: createdAt,
         edited_at: null,
         deleted_at: null,
@@ -528,21 +605,17 @@ export class ChatRoom extends DurableObject<Env> {
 
     if (wireMessage) {
       this.broadcastAll({ kind: "message", message: wireMessage });
-
-      // D1 mirror: best-effort, off the critical path.
       this.scheduleMirror({
         id: messageId,
-        roomId: payload.roomId,
-        userId: payload.userId,
-        body: payload.body,
-        parentId,
+        roomId,
+        userId,
+        body,
+        parentId: null,
         createdAt,
         editedAt: null,
         deletedAt: null,
       });
     }
-
-    return Response.json({ ok: true });
   }
 
   /** Broadcast to ALL open WebSocket clients (no exclusion). */
