@@ -36,9 +36,12 @@ const pathname = new URL(Astro.request.url).pathname;
 const onWiki = pathname.startsWith("/w");
 const onAsk = pathname.startsWith("/ask");
 const onInbox = pathname.startsWith("/inbox");
+const onTasks = pathname.startsWith("/tasks");
+const onCalendar = pathname.startsWith("/calendar");
 const onTimeline = pathname.startsWith("/timeline");
 const onSettings = pathname.startsWith("/settings");
-const onChat = !onWiki && !onAsk && !onInbox && !onTimeline && !onSettings;
+const onChat =
+  !onWiki && !onAsk && !onInbox && !onTasks && !onCalendar && !onTimeline && !onSettings;
 ---
 
 <style>
@@ -119,6 +122,26 @@ const onChat = !onWiki && !onAsk && !onInbox && !onTimeline && !onSettings;
               : "text-muted-foreground hover:bg-background/60",
           ]}
           aria-current={onAsk ? "page" : undefined}>Ask</a
+        >
+        <a
+          href="/tasks"
+          class:list={[
+            "flex-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+            onTasks
+              ? "bg-background text-foreground"
+              : "text-muted-foreground hover:bg-background/60",
+          ]}
+          aria-current={onTasks ? "page" : undefined}>Tasks</a
+        >
+        <a
+          href="/calendar"
+          class:list={[
+            "flex-1 px-3 py-2 text-center text-sm font-medium transition-colors",
+            onCalendar
+              ? "bg-background text-foreground"
+              : "text-muted-foreground hover:bg-background/60",
+          ]}
+          aria-current={onCalendar ? "page" : undefined}>Calendar</a
         >
         <a
           href="/inbox"

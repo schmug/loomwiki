@@ -1,0 +1,73 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Calendar (v0.1 M9) — /calendar. SSR-fetches the current month's grid
+// range; the React island owns navigation, filters, and event creation.
+// Member-accessible (no owner gate) — mirrors tasks.astro's SSR/auth
+// shape and AppShell slot structure.
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import { CalendarView } from "@/components/calendar/CalendarView";
+import Layout from "@/layouts/Layout.astro";
+import { gridRangeEpochs, monthGrid } from "@/lib/calendar-dates";
+import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+import type { CalendarEntry } from "@loomwiki/schema";
+
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+const now = new Date();
+const year = now.getUTCFullYear();
+const month = now.getUTCMonth() + 1;
+const { from, to } = gridRangeEpochs(monthGrid(year, month));
+
+let entries: CalendarEntry[] = [];
+try {
+  const resp = await ssrApiGet<{ entries: CalendarEntry[] }>(
+    Astro.request,
+    `/api/calendar?from=${from}&to=${to}`,
+  );
+  entries = resp.entries;
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  // Any non-auth API error still renders the page chrome with an empty
+  // grid rather than a hard 500 — same graceful-empty convention as
+  // tasks.astro / timeline.astro.
+  if (!(err instanceof SsrApiError)) throw err;
+}
+
+const rooms = me.rooms.map((r) => ({ id: r.id, slug: r.slug }));
+const isOwner = me.workspace.owner_id === me.user.id;
+---
+
+<Layout title={`Calendar — ${me.workspace.name}`}>
+  <AppShell
+    workspaceName={me.workspace.name}
+    userDisplayName={me.user.display_name}
+    isOwner={isOwner}
+  >
+    <RoomList slot="sidebar" client:idle workspaceId={me.workspace.id} rooms={me.rooms} />
+    <div slot="main" class="h-full min-h-0 overflow-y-auto p-4">
+      <header class="mb-4">
+        <h1 class="text-lg font-semibold">Calendar</h1>
+        <p class="text-xs text-muted-foreground">
+          Events and task due dates for this workspace.
+        </p>
+      </header>
+      <CalendarView
+        client:load
+        initialEntries={entries}
+        initialYear={year}
+        initialMonth={month}
+        rooms={rooms}
+        currentUserId={me.user.id}
+      />
+    </div>
+  </AppShell>
+</Layout>
