@@ -33,6 +33,8 @@ Loomwiki is **not** trying to replace Slack, Notion, Linear, or Confluence. The 
 - Voice / video / screen-sharing
 - Full project management: sprints, OKRs, Gantt, story points (lightweight
   native tasks, kanban, and calendar shipped in v0.1 — see §19 M9–M11)
+- External calendar sync (CalDAV / Google Calendar): the v0.1 calendar is
+  native-only; recurrence and reminders are deferred, not built (§20 Q25, Q30)
 - File-heavy collaboration (Google Drive replacement)
 - Federation (Matrix-style)
 - Mobile-native apps (PWA only)
