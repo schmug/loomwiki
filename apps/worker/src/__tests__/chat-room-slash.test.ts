@@ -6,7 +6,7 @@
 // hitting the DO directly.
 
 import { SELF, env, runInDurableObject } from "cloudflare:test";
-import { PROTOCOL_VERSION, type ServerMsg } from "@loomwiki/shared";
+import { ErrorCodes, PROTOCOL_VERSION, type ServerMsg } from "@loomwiki/shared";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ChatRoom } from "../do/ChatRoom.js";
 import { applyMigrations, resetDb } from "./__fixtures__/db.js";
@@ -237,5 +237,76 @@ describe("ChatRoom slash commands", () => {
 
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM tasks").first<{ n: number }>();
     expect(n?.n).toBe(0);
+  });
+
+  it("invoking command message is durable in D1 before the FK-bearing INSERT", async () => {
+    // tasks.origin_message_id has a FK REFERENCES messages(id). The normal
+    // mirror is fire-and-forget (waitUntil), so the command message must be
+    // forced durable in D1 *before* execSlashCommand runs the dependent
+    // INSERT. Assert both: the task's origin_message_id is populated and the
+    // referenced message row is present in D1 once the confirmation arrives.
+    const alice = await bootstrapMember("alice@example.com", "general");
+    const ws = await connect(alice.roomId, alice.jwt);
+
+    const { ack, note } = await sendAndSettle(ws, "t1", "/task Fix login bug");
+    expect(ack.kind).toBe("ack");
+    if (ack.kind !== "ack") throw new Error("unreachable");
+    expect(note.kind).toBe("message");
+
+    const task = await env.DB.prepare("SELECT origin_message_id FROM tasks").first<{
+      origin_message_id: string | null;
+    }>();
+    expect(task?.origin_message_id).not.toBeNull();
+    expect(task?.origin_message_id).toBe(ack.messageId);
+
+    const msg = await env.DB.prepare("SELECT id FROM messages WHERE id = ?")
+      .bind(task?.origin_message_id)
+      .first<{ id: string }>();
+    expect(msg?.id).toBe(ack.messageId);
+  });
+
+  it("exec-layer DB error yields a sender error frame, not a hung socket", async () => {
+    const alice = await bootstrapMember("alice@example.com", "general");
+    const ws = await connect(alice.roomId, alice.jwt);
+
+    const stub = env.CHAT_ROOM.get(
+      env.CHAT_ROOM.idFromName(alice.roomId),
+    ) as DurableObjectStub<ChatRoom>;
+
+    // Break ONLY execSlashCommand's `INSERT INTO tasks` on the live instance,
+    // leaving the synchronous message mirror (`INSERT INTO messages`) and the
+    // workspace SELECT intact. This isolates the Part B guard: the exec throws
+    // *after* the invoking message was already acked. Without the dispatch
+    // guard the throw escapes webSocketMessage and the socket hangs with no
+    // `message` and no `error` frame. Injected via runInDurableObject, the
+    // same live-instance seam pattern ws-mirror.test.ts uses for `_mirrorFn`.
+    await runInDurableObject(stub, (instance: ChatRoom) => {
+      const holder = instance as unknown as { env: Record<string, unknown> };
+      const realDb = holder.env.DB as { prepare: (sql: string) => unknown };
+      const brokenDb = new Proxy(realDb, {
+        get(target, prop, receiver) {
+          if (prop === "prepare") {
+            return (sql: string) => {
+              if (sql.includes("INSERT INTO tasks")) {
+                throw new Error("injected tasks INSERT failure");
+              }
+              return realDb.prepare(sql);
+            };
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+      holder.env = { ...holder.env, DB: brokenDb };
+    });
+
+    ws.send({ kind: "send", tempId: "t1", body: "/task Fix login bug" });
+    const ack = await ws.next();
+    expect(ack.kind).toBe("ack");
+    // The guard must turn the exec throw into an error frame within the
+    // ws.next() timeout — a hang would reject here instead.
+    const err = await ws.next();
+    expect(err.kind).toBe("error");
+    if (err.kind !== "error") throw new Error("unreachable");
+    expect(err.code).toBe(ErrorCodes.INTERNAL_ERROR);
   });
 });

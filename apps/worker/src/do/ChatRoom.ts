@@ -308,13 +308,13 @@ export class ChatRoom extends DurableObject<Env> {
    * Durable-write + ack + broadcast + mirror for a user-authored message.
    * Extracted from handleSend so slash commands can persist their invoking
    * message (it becomes tasks/events.origin_message_id). Returns the new
-   * message id.
+   * message id and its created-at timestamp.
    */
   private async persistUserMessage(
     ws: WebSocket,
     attachment: WsAttachment,
     env: { tempId: string; body: string; parentId?: string },
-  ): Promise<string> {
+  ): Promise<{ messageId: string; createdAt: number }> {
     const messageId = id();
     const createdAt = Math.floor(Date.now() / 1000);
     const parentId = env.parentId ?? null;
@@ -362,7 +362,7 @@ export class ChatRoom extends DurableObject<Env> {
       });
     }
 
-    return messageId;
+    return { messageId, createdAt };
   }
 
   private async handleSlash(
@@ -379,32 +379,65 @@ export class ChatRoom extends DurableObject<Env> {
 
     // The invoking message persists first — it is the provenance record
     // (tasks/events.origin_message_id) and the room sees what was typed.
-    const originMessageId = await this.persistUserMessage(ws, attachment, env);
-
-    const wsRow = await this.env.DB.prepare("SELECT workspace_id FROM rooms WHERE id = ?")
-      .bind(attachment.roomId)
-      .first<{ workspace_id: string }>();
-    if (!wsRow) {
-      // The route layer validated the room before the upgrade; a miss here
-      // means D1 drift. Fail loudly to the sender, keep the room quiet.
-      sendError(ws, ErrorCodes.INTERNAL_ERROR, "room not found in D1");
+    const origin = await this.persistUserMessage(ws, attachment, env);
+    // Slash commands INSERT a D1 row whose origin_message_id FK references
+    // messages(id). The normal mirror is fire-and-forget, so force the
+    // invoking message durable in D1 *before* the dependent INSERT. The
+    // mirror is idempotent (ON CONFLICT), so the scheduled async retry is a
+    // harmless no-op after this.
+    try {
+      await mirrorMessageToD1(this.env, {
+        id: origin.messageId,
+        roomId: attachment.roomId,
+        userId: attachment.userId,
+        body: env.body,
+        parentId: env.parentId ?? null,
+        createdAt: origin.createdAt,
+        editedAt: null,
+        deletedAt: null,
+      });
+      clearPendingMirror(this.sql, origin.messageId);
+    } catch {
+      // Mirror failed: the message stays pending (its retry alarm will land
+      // it later), but we cannot run the FK-bearing INSERT now. Tell the
+      // sender (no tempId — the message was already acked) and stop.
+      sendError(ws, ErrorCodes.INTERNAL_ERROR, "could not persist command message");
       return;
     }
 
-    const ctx: SlashContext = {
-      db: this.env.DB,
-      workspaceId: wsRow.workspace_id,
-      roomId: attachment.roomId,
-      userId: attachment.userId,
-      originMessageId,
-      nowS: Math.floor(Date.now() / 1000),
-    };
-    const result = await execSlashCommand(ctx, slash.command);
-    if (result.ok) {
-      await this.injectMessage(attachment.userId, attachment.roomId, result.note);
-    } else {
-      // No tempId — the invoking message was already acked.
-      sendError(ws, ErrorCodes.VALIDATION_FAILED, result.error);
+    try {
+      const wsRow = await this.env.DB.prepare("SELECT workspace_id FROM rooms WHERE id = ?")
+        .bind(attachment.roomId)
+        .first<{ workspace_id: string }>();
+      if (!wsRow) {
+        // The route layer validated the room before the upgrade; a miss here
+        // means D1 drift. Fail loudly to the sender, keep the room quiet.
+        sendError(ws, ErrorCodes.INTERNAL_ERROR, "room not found in D1");
+        return;
+      }
+
+      const ctx: SlashContext = {
+        db: this.env.DB,
+        workspaceId: wsRow.workspace_id,
+        roomId: attachment.roomId,
+        userId: attachment.userId,
+        originMessageId: origin.messageId,
+        nowS: Math.floor(Date.now() / 1000),
+      };
+      const result = await execSlashCommand(ctx, slash.command);
+      if (result.ok) {
+        await this.injectMessage(attachment.userId, attachment.roomId, result.note);
+      } else {
+        // No tempId — the invoking message was already acked.
+        sendError(ws, ErrorCodes.VALIDATION_FAILED, result.error);
+      }
+    } catch (err) {
+      // Any DB error here (the FK-bearing INSERT, the workspace SELECT, D1
+      // drift) must not propagate uncaught out of webSocketMessage — the
+      // client already received its ack, so an uncaught throw would leave its
+      // socket hung with no message and no error frame.
+      console.warn("[chatroom] slash exec failed", { err: String(err) });
+      sendError(ws, ErrorCodes.INTERNAL_ERROR, "failed to run command");
     }
   }
 
