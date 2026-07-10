@@ -1,0 +1,77 @@
+---
+// SPDX-License-Identifier: Apache-2.0
+// Kanban board (v0.1 M9) — /tasks. SSR-fetches the newest 200 tasks +
+// workspace members; the React island owns filters, drag-drop, creation.
+// Member-accessible (no owner gate) — mirrors timeline.astro's SSR/auth
+// shape and AppShell slot structure, minus the owner-only gate.
+
+import AppShell from "@/components/AppShell.astro";
+import { RoomList } from "@/components/RoomList";
+import { KanbanBoard } from "@/components/tasks/KanbanBoard";
+import Layout from "@/layouts/Layout.astro";
+import { SsrApiError, SsrAuthRequiredError, ssrApiGet } from "@/lib/ssr-api";
+import type { CurrentUserPayload } from "@/lib/types";
+import type { MemberSummary, Task } from "@loomwiki/schema";
+
+interface TasksPayload {
+  tasks: Task[];
+  hasMore: boolean;
+}
+
+let me: CurrentUserPayload;
+try {
+  me = await ssrApiGet<CurrentUserPayload>(Astro.request, "/api/me");
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  throw err;
+}
+
+let tasksPage: TasksPayload = { tasks: [], hasMore: false };
+let members: MemberSummary[] = [];
+try {
+  [tasksPage, { members }] = await Promise.all([
+    ssrApiGet<TasksPayload>(Astro.request, "/api/tasks?limit=200"),
+    ssrApiGet<{ members: MemberSummary[] }>(
+      Astro.request,
+      `/api/workspaces/${me.workspace.id}/members`,
+    ),
+  ]);
+} catch (err) {
+  if (err instanceof SsrAuthRequiredError) return Astro.redirect("/login");
+  // Any non-auth API error still renders the page chrome with an empty
+  // board rather than a hard 500 — same graceful-empty convention as
+  // timeline.astro.
+  if (!(err instanceof SsrApiError)) throw err;
+}
+
+const rooms = me.rooms.map((r) => ({ id: r.id, slug: r.slug }));
+const isOwner = me.workspace.owner_id === me.user.id;
+---
+
+<Layout title={`Tasks — ${me.workspace.name}`}>
+  <AppShell
+    workspaceName={me.workspace.name}
+    userDisplayName={me.user.display_name}
+    isOwner={isOwner}
+  >
+    <RoomList slot="sidebar" client:idle workspaceId={me.workspace.id} rooms={me.rooms} />
+    <div slot="main" class="h-full min-h-0 overflow-y-auto p-4">
+      <header class="mb-4">
+        <h1 class="text-lg font-semibold">Tasks</h1>
+        <p class="text-xs text-muted-foreground">
+          Drag a card between columns to change its status.
+        </p>
+      </header>
+      {tasksPage.hasMore && (
+        <p class="mb-2 text-sm text-muted-foreground">Showing the newest 200 tasks.</p>
+      )}
+      <KanbanBoard
+        client:load
+        initialTasks={tasksPage.tasks}
+        members={members}
+        rooms={rooms}
+        currentUserId={me.user.id}
+      />
+    </div>
+  </AppShell>
+</Layout>
