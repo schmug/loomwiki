@@ -31,8 +31,10 @@ A team workspace where every conversation that *would* have been lost in Slack s
 Loomwiki is **not** trying to replace Slack, Notion, Linear, or Confluence. The POC explicitly does not target:
 
 - Voice / video / screen-sharing
-- Calendar / meetings / availability
-- Tasks, projects, sprints, OKRs
+- Full project management: sprints, OKRs, Gantt, story points (lightweight
+  native tasks, kanban, and calendar shipped in v0.1 — see §19 M9–M11)
+- External calendar sync (CalDAV / Google Calendar): the v0.1 calendar is
+  native-only; recurrence and reminders are deferred, not built (§20 Q25, Q30)
 - File-heavy collaboration (Google Drive replacement)
 - Federation (Matrix-style)
 - Mobile-native apps (PWA only)
@@ -74,6 +76,14 @@ Resolve these as you go. **Bold = blocking for v0.0.1.**
 | Q22 | Versioning (SemVer / CalVer) | suggested: SemVer |
 | Q23 | Repo name (matches Q1) | depends on Q1 |
 | Q24 | Org (personal `schmug/` or new GitHub org) | ❓ |
+| Q25 | Event recurrence (rrule column reserved) | deferred (v0.1 design doc) |
+| Q26 | In-column manual kanban ordering | deferred (v0.1 design doc) |
+| Q27 | Task priority field | deferred (v0.1 design doc) |
+| Q28 | Live board sync over WS | deferred (with Q18) |
+| Q29 | Attendee RSVP status | deferred (v0.1 design doc) |
+| Q30 | Event reminders (scheduled_actions fit) | deferred (v0.1 design doc) |
+| Q31 | scheduled_actions overlay on calendar | deferred (v0.1 design doc) |
+| Q32 | GitHub Issues sync layer (issue #30) | deferred until after M11 |
 
 ---
 
@@ -410,6 +420,25 @@ Ingest agent reads from `path: /rooms/**` *separately*, but those documents are 
 
 ❓ **Q-search-namespacing**: As soon as Loomwiki supports multi-workspace, switch to AI Search namespaces (`ai_search_namespaces` binding) keyed by `workspace_id`.
 
+### 7.4 Tasks & events (v0.1, migration `0006_tasks_events.sql`)
+
+Native task tracker + calendar entities (M9). Full DDL in
+`packages/schema/d1-migrations/0006_tasks_events.sql`; design + decisions log
+in `docs/superpowers/specs/2026-07-08-calendar-tasks-kanban-design.md`.
+
+- **`tasks`** — room-optional (`room_id` nullable), fixed status enum
+  (`backlog|todo|doing|done|cancelled`), single `assignee_id`, `due_at`,
+  `origin_message_id` chat provenance. Kanban is a view over `status` —
+  no board/column tables.
+- **`task_tags`** — `(task_id, tag)`; tags are kebab-case lowercase.
+- **`events`** — single-occurrence (`rrule` reserved NULL, Q25), `all_day`
+  flag, soft-cancel via `cancelled_at`, `origin_message_id` provenance.
+- **`event_attendees`** — `(event_id, user_id)`; no RSVP status (Q29).
+
+Time conventions: date-only values (task `due_at`, all-day events) are epoch
+at 00:00:00 UTC and render by UTC date; timed events are instants rendered
+browser-local.
+
 ---
 
 ## 8. API surface
@@ -438,6 +467,13 @@ Hono app, all routes under `/api`. Auth via Cloudflare Access JWT (`CF-Access-Jw
 | POST | `/api/search` | Hybrid search via AI Search |
 | POST | `/api/ask` | RAG: search + LLM, returns answer + citations |
 | GET | `/api/health` | Liveness |
+| GET | `/api/workspaces/:wid/members` | Workspace user list (assignee pickers) |
+| GET/POST | `/api/tasks` | List (filters + cursor) / create task (v0.1 M9) |
+| GET/PATCH/DELETE | `/api/tasks/:id` | Task detail / partial update / hard delete |
+| GET/POST | `/api/events` | Range list / create event (v0.1 M9) |
+| GET/PATCH/DELETE | `/api/events/:id` | Event detail / update / soft-cancel |
+| POST/DELETE | `/api/events/:id/attendees/:uid` | Add / remove attendee |
+| GET | `/api/calendar` | Union of events + due tasks over a range |
 
 **Acceptance criteria for §8:**
 - All routes typed end-to-end (Zod schemas in `packages/schema`, shared with web).
@@ -886,6 +922,34 @@ Each milestone is a self-contained chunk sized for one Claude Code session at `x
 - README polish.
 - **DoD**: all of §18 passes.
 
+### M9 — Tasks + events + kanban + calendar (v0.1, one session)
+- Migration `0006_tasks_events.sql`; Zod schemas + parsers in `packages/schema`.
+- Routes: `/api/tasks`, `/api/events` (+ attendees), `/api/calendar`,
+  `/api/workspaces/:wid/members`. Integration tests per route.
+- `/tasks` kanban (fixed columns, drag = status PATCH) + `/calendar`
+  (month/week) in `apps/web`.
+- ChatRoom DO slash commands `/task`, `/event`, `/done` (deterministic
+  parser in `packages/shared`; confirmation via the system-message path).
+- **Subagent fan-out**: once Tasks 1–3 (migration, schemas, parser) are
+  committed, the route tasks (5–7), DO task (8), and web tasks (9–11) are
+  three independent lanes.
+- **DoD**: create a task by chat command and by board; drag it across the
+  board; see its due date and an event on `/calendar`.
+- Plan: `docs/superpowers/plans/2026-07-08-m9-tasks-events-foundation.md`.
+
+### M10 — Tasks/calendar interop (one session)
+- Message↔task linking UI (create-from-message, backlink chips).
+- Status-broadcast system messages on API-side changes to room-scoped tasks.
+- Room-page Tasks/Calendar tabs; My-views polish.
+- Daily vault snapshot: `/tasks/board.md` + `/calendar/YYYY-MM.md` in the
+  02:00 UTC cron. Re-scoping comment on issue #30.
+
+### M11 — Agent extraction (one session)
+- `extraction_proposals` table (migration 0007); ingest agent proposes
+  tasks/events into the existing inbox; merge materializes rows.
+- ⚠️ Touches `vault-template/AGENTS.md` (do-not-touch surface): requires
+  explicit operator approval at milestone start.
+
 **Total**: ~8–10 Claude Code sessions, ~6–10 weekends including the human review/dogfood-loop overhead.
 
 ---
@@ -922,6 +986,17 @@ Each milestone is a self-contained chunk sized for one Claude Code session at `x
 - **Q16 — Email-to-wiki**:
 - **Q17 — AGENTS.md user-editable**:
 - **Q18 — Real-time presence**:
+
+### v0.1 tasks/calendar (M9–M11)
+
+- **Q25 — Event recurrence** (deferred; `events.rrule` reserved NULL):
+- **Q26 — In-column manual kanban ordering** (deferred; sort = due, then created):
+- **Q27 — Task priority field** (deferred):
+- **Q28 — Live board sync over WS** (deferred with Q18):
+- **Q29 — Attendee RSVP status** (deferred):
+- **Q30 — Event reminders** (deferred; natural `scheduled_actions` fit):
+- **Q31 — `scheduled_actions` overlay on calendar** (deferred):
+- **Q32 — GitHub Issues sync layer (#30)** (deferred until after M11):
 
 ### Repo-level
 

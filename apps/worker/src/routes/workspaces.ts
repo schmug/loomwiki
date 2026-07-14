@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { CreateRoomRequestSchema } from "@loomwiki/schema";
+import { CreateRoomRequestSchema, MemberSummarySchema } from "@loomwiki/schema";
 import { parseRoomRow } from "@loomwiki/schema/parsers";
 import { ErrorCodes, LoomwikiError, apiOk, id } from "@loomwiki/shared";
 import { Hono } from "hono";
@@ -88,4 +88,23 @@ export const workspacesRoute = new Hono<AuthEnv>()
       });
     }
     return c.json(apiOk({ room: serializeRoom(parseRoomRow(row)) }), 201);
+  })
+  .get("/:wid/members", async (c) => {
+    const wid = c.req.param("wid");
+    assertWorkspaceMatch(c.var.workspace.id, wid);
+
+    const rows = await c.env.DB.prepare(
+      "SELECT id, display_name, email FROM users ORDER BY display_name, id",
+    ).all();
+    const members = rows.results.map((r) => {
+      const parsed = MemberSummarySchema.safeParse(r);
+      if (!parsed.success) {
+        throw new LoomwikiError(ErrorCodes.DB_PARSE_ERROR, "Failed to parse users row", {
+          status: 500,
+          details: parsed.error.issues,
+        });
+      }
+      return parsed.data;
+    });
+    return c.json(apiOk({ members }));
   });

@@ -11,6 +11,7 @@ import { ErrorCodes, LoomwikiError } from "@loomwiki/shared";
 import type { infer as ZodInfer, ZodTypeAny } from "zod";
 import {
   AuditLogRowSchema,
+  EventRowSchema,
   IngestRunRowSchema,
   LlmUsageRowSchema,
   MessageRowSchema,
@@ -18,6 +19,7 @@ import {
   RoomMemberRowSchema,
   RoomRowSchema,
   ScheduledActionRowSchema,
+  TaskRowSchema,
   UserRowSchema,
   type WikiPageFrontmatter,
   WikiPageFrontmatterSchema,
@@ -51,6 +53,8 @@ export const parseWorkspaceSettingsRow = (row: unknown) =>
   parseRow(WorkspaceSettingsRowSchema, row, "workspace_settings");
 export const parseScheduledActionRow = (row: unknown) =>
   parseRow(ScheduledActionRowSchema, row, "scheduled_actions");
+export const parseTaskRow = (row: unknown) => parseRow(TaskRowSchema, row, "tasks");
+export const parseEventRow = (row: unknown) => parseRow(EventRowSchema, row, "events");
 
 /**
  * Parse a Zod-validated wiki frontmatter object. Caller hands in an
@@ -74,6 +78,18 @@ export type {
   AskCitation,
   AskRequest,
   AuditAction,
+  CalendarEntry,
+  CalendarResponse,
+  CreateEventRequest,
+  CreateTaskRequest,
+  EventRow,
+  EventWithAttendees,
+  MemberSummary,
+  PatchEventRequest,
+  PatchTaskRequest,
+  Task,
+  TaskRow,
+  TaskStatus,
   AuditLogEntry,
   AuditLogRow,
   AuditResourceKind,

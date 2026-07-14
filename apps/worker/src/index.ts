@@ -13,7 +13,9 @@ import { adminAuditRoute } from "./routes/admin-audit.js";
 import { adminCronRoute } from "./routes/admin-cron.js";
 import { adminSearchRoute } from "./routes/admin-search.js";
 import { askRoute } from "./routes/ask.js";
+import { calendarRoute } from "./routes/calendar.js";
 import { digestRoute } from "./routes/digest.js";
+import { eventsRoute } from "./routes/events.js";
 import { healthRoute } from "./routes/health.js";
 import { ingestRoute } from "./routes/ingest.js";
 import { meRoute } from "./routes/me.js";
@@ -25,6 +27,7 @@ import { searchRoute } from "./routes/search.js";
 import { agentsMdSettingsRoute } from "./routes/settings/agentsmd.js";
 import { byokSettingsRoute } from "./routes/settings/byok.js";
 import { workspaceSettingsRoute } from "./routes/settings/workspace.js";
+import { tasksRoute } from "./routes/tasks.js";
 import { timelineRoute } from "./routes/timeline.js";
 import { wikiRoute } from "./routes/wiki.js";
 import { workspacesRoute } from "./routes/workspaces.js";
@@ -71,6 +74,12 @@ app.use("/api/settings/*", authMiddleware);
 app.use("/api/_admin/audit", authMiddleware);
 // Issue #32: unified timeline read API (owner-gated inside the route).
 app.use("/api/timeline", authMiddleware);
+// v0.1 M9: tasks + events + calendar.
+app.use("/api/tasks", authMiddleware);
+app.use("/api/tasks/*", authMiddleware);
+app.use("/api/events", authMiddleware);
+app.use("/api/events/*", authMiddleware);
+app.use("/api/calendar", authMiddleware);
 
 app.route("/api/me", meRoute);
 app.route("/api/workspaces", workspacesRoute);
@@ -103,6 +112,9 @@ app.route("/api", adminAuditRoute);
 // Issue #32: unified timeline view (audit + ingest, graceful-empty
 // scheduled/issue). Mounted at /api so the route declares /timeline.
 app.route("/api", timelineRoute);
+app.route("/api", tasksRoute);
+app.route("/api", eventsRoute);
+app.route("/api", calendarRoute);
 
 app.notFound((c) =>
   c.json(apiErr(ErrorCodes.NOT_FOUND, `No route for ${c.req.method} ${c.req.path}`), 404),

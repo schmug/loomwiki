@@ -778,3 +778,180 @@ export const TimelineResponseSchema = z.object({
   next_cursor: Uuidv7Schema.nullable(),
 });
 export type TimelineResponse = z.infer<typeof TimelineResponseSchema>;
+
+// ---------- Tasks & events (v0.1 M9) ----------
+//
+// Native task tracker + calendar entities (migration 0006). Kanban is a
+// view over `tasks.status` — fixed enum, no board tables. Date-only
+// values (task due_at, all-day events) are epoch at 00:00:00 UTC of the
+// calendar date and render by UTC date; timed events are instants and
+// render browser-local. See docs/superpowers/specs/
+// 2026-07-08-calendar-tasks-kanban-design.md.
+
+export const TaskStatusSchema = z.enum(["backlog", "todo", "doing", "done", "cancelled"]);
+export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+
+// The kanban columns, in board order. `cancelled` is reachable only via
+// the status filter — it never renders as a column.
+export const TASK_BOARD_STATUSES = ["backlog", "todo", "doing", "done"] as const;
+
+export const TagSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "tag must be kebab-case lowercase ASCII");
+
+export const TaskRowSchema = z.object({
+  id: Uuidv7Schema,
+  workspace_id: Uuidv7Schema,
+  room_id: Uuidv7Schema.nullable(),
+  title: z.string().min(1).max(200),
+  body: z.string().max(4096).nullable(),
+  status: TaskStatusSchema,
+  assignee_id: Uuidv7Schema.nullable(),
+  due_at: EpochSeconds.nullable(),
+  origin_message_id: Uuidv7Schema.nullable(),
+  created_by: Uuidv7Schema,
+  created_at: EpochSeconds,
+  updated_at: EpochSeconds,
+  completed_at: EpochSeconds.nullable(),
+});
+export type TaskRow = z.infer<typeof TaskRowSchema>;
+
+// API shape: row + tags (joined from task_tags at the route layer).
+export const TaskSchema = TaskRowSchema.extend({
+  tags: z.array(TagSchema).max(20),
+});
+export type Task = z.infer<typeof TaskSchema>;
+
+export const CreateTaskRequestSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    body: z.string().max(4096).optional(),
+    status: TaskStatusSchema.optional(), // default 'todo'
+    room_id: Uuidv7Schema.nullable().optional(),
+    assignee_id: Uuidv7Schema.nullable().optional(),
+    due_at: EpochSeconds.nullable().optional(),
+    tags: z.array(TagSchema).max(20).optional(),
+  })
+  .strict();
+export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>;
+
+export const PatchTaskRequestSchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    body: z.string().max(4096).nullable().optional(),
+    status: TaskStatusSchema.optional(),
+    room_id: Uuidv7Schema.nullable().optional(),
+    assignee_id: Uuidv7Schema.nullable().optional(),
+    due_at: EpochSeconds.nullable().optional(),
+    tags: z.array(TagSchema).max(20).optional(),
+  })
+  .strict()
+  .refine((o) => Object.values(o).some((v) => v !== undefined), {
+    message: "at least one field required",
+  });
+export type PatchTaskRequest = z.infer<typeof PatchTaskRequestSchema>;
+
+// `rrule` is z.null() on purpose: recurrence is deferred (SPEC Q25) and the
+// column is reserved. A non-null value in D1 is drift and should 500 loudly.
+export const EventRowSchema = z.object({
+  id: Uuidv7Schema,
+  workspace_id: Uuidv7Schema,
+  room_id: Uuidv7Schema.nullable(),
+  title: z.string().min(1).max(200),
+  body: z.string().max(4096).nullable(),
+  starts_at: EpochSeconds,
+  ends_at: EpochSeconds.nullable(),
+  all_day: z.union([z.literal(0), z.literal(1)]),
+  rrule: z.null(),
+  origin_message_id: Uuidv7Schema.nullable(),
+  created_by: Uuidv7Schema,
+  created_at: EpochSeconds,
+  updated_at: EpochSeconds,
+  cancelled_at: EpochSeconds.nullable(),
+});
+export type EventRow = z.infer<typeof EventRowSchema>;
+
+// API shape: row + attendee ids (joined from event_attendees).
+// Named EventWithAttendees (not Event) to avoid shadowing the DOM Event type
+// in web code.
+export const EventWithAttendeesSchema = EventRowSchema.extend({
+  attendee_ids: z.array(Uuidv7Schema),
+});
+export type EventWithAttendees = z.infer<typeof EventWithAttendeesSchema>;
+
+export const CreateEventRequestSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    body: z.string().max(4096).optional(),
+    room_id: Uuidv7Schema.nullable().optional(),
+    starts_at: EpochSeconds,
+    ends_at: EpochSeconds.nullable().optional(),
+    all_day: z.boolean().optional(), // default false
+    attendee_ids: z.array(Uuidv7Schema).max(50).optional(),
+  })
+  .strict()
+  .refine((o) => o.ends_at == null || o.ends_at >= o.starts_at, {
+    message: "ends_at must be >= starts_at",
+  });
+export type CreateEventRequest = z.infer<typeof CreateEventRequestSchema>;
+
+export const PatchEventRequestSchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    body: z.string().max(4096).nullable().optional(),
+    room_id: Uuidv7Schema.nullable().optional(),
+    starts_at: EpochSeconds.optional(),
+    ends_at: EpochSeconds.nullable().optional(),
+    all_day: z.boolean().optional(),
+  })
+  .strict()
+  .refine((o) => Object.values(o).some((v) => v !== undefined), {
+    message: "at least one field required",
+  });
+export type PatchEventRequest = z.infer<typeof PatchEventRequestSchema>;
+
+// ---------- Calendar union (GET /api/calendar) ----------
+
+export const CalendarEventEntrySchema = z.object({
+  kind: z.literal("event"),
+  id: Uuidv7Schema,
+  title: z.string().min(1).max(200),
+  room_id: Uuidv7Schema.nullable(),
+  starts_at: EpochSeconds,
+  ends_at: EpochSeconds.nullable(),
+  all_day: z.union([z.literal(0), z.literal(1)]),
+});
+export type CalendarEventEntry = z.infer<typeof CalendarEventEntrySchema>;
+
+export const CalendarTaskEntrySchema = z.object({
+  kind: z.literal("task_due"),
+  id: Uuidv7Schema,
+  title: z.string().min(1).max(200),
+  status: TaskStatusSchema,
+  room_id: Uuidv7Schema.nullable(),
+  assignee_id: Uuidv7Schema.nullable(),
+  due_at: EpochSeconds,
+});
+export type CalendarTaskEntry = z.infer<typeof CalendarTaskEntrySchema>;
+
+export const CalendarEntrySchema = z.discriminatedUnion("kind", [
+  CalendarEventEntrySchema,
+  CalendarTaskEntrySchema,
+]);
+export type CalendarEntry = z.infer<typeof CalendarEntrySchema>;
+
+export const CalendarResponseSchema = z.object({
+  entries: z.array(CalendarEntrySchema),
+  from: EpochSeconds,
+  to: EpochSeconds,
+});
+export type CalendarResponse = z.infer<typeof CalendarResponseSchema>;
+
+// ---------- Workspace members (GET /api/workspaces/:wid/members) ----------
+
+export const MemberSummarySchema = z.object({
+  id: Uuidv7Schema,
+  display_name: z.string().min(1).max(120),
+  email: z.string().email().max(320),
+});
+export type MemberSummary = z.infer<typeof MemberSummarySchema>;

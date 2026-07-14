@@ -23,6 +23,14 @@ const TRUNCATE_ORDER = [
   "byok_keys",
   "proposals",
   "ingest_runs",
+  // M9: task_tags before tasks (FK on task_id); both before messages/rooms/
+  // workspaces/users since tasks references all of those.
+  "task_tags",
+  "tasks",
+  // M9: event_attendees before events (FK on event_id); both before
+  // messages/rooms/workspaces/users since events references all of those.
+  "event_attendees",
+  "events",
   "messages",
   "room_members",
   "scheduled_actions",
