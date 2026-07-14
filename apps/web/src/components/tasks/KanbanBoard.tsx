@@ -51,14 +51,18 @@ export function KanbanBoard({ initialTasks, members, rooms, currentUserId }: Kan
     uid === null ? null : (members.find((m) => m.id === uid)?.display_name ?? null);
 
   async function moveTask(taskId: string, status: TaskStatus): Promise<void> {
-    const prev = tasks;
+    // Per-task, race-safe optimistic update: functional setState so two
+    // concurrent drags compose over the latest state instead of one
+    // clobbering the other via a snapshot of the whole array (see review).
+    const prevStatus = tasks.find((t) => t.id === taskId)?.status;
+    if (prevStatus === undefined) return;
     setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, status } : t)));
     try {
       const { task } = await patchTask(taskId, { status });
       setTasks((ts) => ts.map((t) => (t.id === taskId ? task : t)));
       setError(null);
     } catch (err) {
-      setTasks(prev);
+      setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, status: prevStatus } : t)));
       setError(err instanceof Error ? err.message : "failed to move task");
     }
   }
