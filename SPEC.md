@@ -54,7 +54,7 @@ Resolve these as you go. **Bold = blocking for v0.0.1.**
 | **Q2** | **Domain** (sister to dmarc.mx? .wiki? .dev?) | ❓ |
 | **Q3** | **Frontend framework** (Astro Islands / SvelteKit / React+TanStack) | ❓ |
 | **Q4** | **Editor** (Milkdown / Tiptap / CodeMirror 6 / Monaco) | ❓ |
-| Q5 | Markdown flavor (GFM only / Obsidian-flavored) | ❓ |
+| Q5 | Markdown flavor (GFM only / Obsidian-flavored) | suggested: GFM + bundle-absolute links |
 | Q6 | Workspace model (single per deploy / multi) | suggested: single |
 | Q7 | Ingest cadence (manual / cron / real-time / hybrid) | suggested: manual for POC |
 | Q8 | Proposal mechanism (Artifacts branch / D1 status field) | suggested: D1 status, commit on merge |
@@ -905,7 +905,8 @@ Each milestone is a self-contained chunk sized for one Claude Code session at `x
 
 ### Important — answer before relevant milestone
 
-- **Q5 — Markdown flavor** (M4):
+- **Q5 — Markdown flavor** (M4, suggested = GFM + bundle-absolute markdown links):
+  - Input (2026-07-14): [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — Google's draft Open Knowledge Format — standardizes exactly loomwiki's substrate (markdown + YAML frontmatter bundles) and uses standard bundle-absolute markdown links (`[text](/wiki/page.md)`), not wikilinks. Choosing GFM + bundle-absolute links makes vault links natively OKF-compatible, renders correctly on GitHub and every markdown tool, and avoids building a wikilink resolver (v0.0.1 renders `[[…]]` as code-fenced text). Counterpoint: title-based `[[wikilinks]]` are easier for the ingest agent to emit and friendlier to Obsidian users. Interacts with [#110](https://github.com/schmug/loomwiki/issues/110) (OKF export) — if Q5 lands on GFM links, its link-rewriting stage becomes a near-no-op.
 - **Q6 — Workspace model** (M1, but POC = single):
 - **Q7 — Ingest cadence** (M7, but POC = manual):
 - **Q8 — Proposal mechanism** (M7, suggested = D1 status field, commit on merge):
