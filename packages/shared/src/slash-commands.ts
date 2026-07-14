@@ -8,7 +8,13 @@
 
 export type SlashCommand =
   | { kind: "task"; title: string; assigneeToken: string | null; dueDate: string | null }
-  | { kind: "event"; title: string; date: string; time: string | null; durationMinutes: number | null }
+  | {
+      kind: "event";
+      title: string;
+      date: string;
+      time: string | null;
+      durationMinutes: number | null;
+    }
   | { kind: "done"; title: string };
 
 export type SlashParseResult =
@@ -113,5 +119,9 @@ export function parseSlashCommand(body: string): SlashParseResult {
   }
   if (i < tail.length) return err(EVENT_USAGE);
 
-  return { matched: true, ok: true, command: { kind: "event", title, date, time, durationMinutes } };
+  return {
+    matched: true,
+    ok: true,
+    command: { kind: "event", title, date, time, durationMinutes },
+  };
 }

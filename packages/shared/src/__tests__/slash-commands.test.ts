@@ -24,7 +24,12 @@ describe("/task", () => {
     expect(parseSlashCommand("/task @cory Fix login bug due:2026-07-20")).toEqual({
       matched: true,
       ok: true,
-      command: { kind: "task", title: "Fix login bug", assigneeToken: "cory", dueDate: "2026-07-20" },
+      command: {
+        kind: "task",
+        title: "Fix login bug",
+        assigneeToken: "cory",
+        dueDate: "2026-07-20",
+      },
     });
   });
 
@@ -48,7 +53,13 @@ describe("/event", () => {
     expect(parseSlashCommand("/event Team offsite 2026-07-20")).toEqual({
       matched: true,
       ok: true,
-      command: { kind: "event", title: "Team offsite", date: "2026-07-20", time: null, durationMinutes: null },
+      command: {
+        kind: "event",
+        title: "Team offsite",
+        date: "2026-07-20",
+        time: null,
+        durationMinutes: null,
+      },
     });
   });
 
@@ -56,7 +67,13 @@ describe("/event", () => {
     expect(parseSlashCommand("/event Standup 2026-07-20 09:30 +30m")).toEqual({
       matched: true,
       ok: true,
-      command: { kind: "event", title: "Standup", date: "2026-07-20", time: "09:30", durationMinutes: 30 },
+      command: {
+        kind: "event",
+        title: "Standup",
+        date: "2026-07-20",
+        time: "09:30",
+        durationMinutes: 30,
+      },
     });
     expect(parseSlashCommand("/event Review 2026-07-20 14:00 +2h")).toMatchObject({
       matched: true,
@@ -66,10 +83,22 @@ describe("/event", () => {
   });
 
   it("rejects missing date, bad time, duration without time, trailing junk", () => {
-    expect(parseSlashCommand("/event Standup tomorrow")).toMatchObject({ matched: true, ok: false });
-    expect(parseSlashCommand("/event S 2026-07-20 25:00")).toMatchObject({ matched: true, ok: false });
-    expect(parseSlashCommand("/event S 2026-07-20 +30m")).toMatchObject({ matched: true, ok: false });
-    expect(parseSlashCommand("/event S 2026-07-20 09:00 +30m extra")).toMatchObject({ matched: true, ok: false });
+    expect(parseSlashCommand("/event Standup tomorrow")).toMatchObject({
+      matched: true,
+      ok: false,
+    });
+    expect(parseSlashCommand("/event S 2026-07-20 25:00")).toMatchObject({
+      matched: true,
+      ok: false,
+    });
+    expect(parseSlashCommand("/event S 2026-07-20 +30m")).toMatchObject({
+      matched: true,
+      ok: false,
+    });
+    expect(parseSlashCommand("/event S 2026-07-20 09:00 +30m extra")).toMatchObject({
+      matched: true,
+      ok: false,
+    });
   });
 });
 
